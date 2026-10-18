@@ -1,13 +1,13 @@
 # 0003. Nodrift v1 design
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-18
 
 ## Context
 
 [Nodrift](https://github.com/didi-build/nodrift) is a small versioned npm CLI that keeps privacy documentation aligned with application code. Consumer repos (for example [`didi-build/we-met`](https://github.com/didi-build/we-met)) maintain a machine-readable **data map** and Cloudflare Worker configuration; without automated checks, maps drift from migrations, bindings, and operational reality.
 
-Planning and the locked v1 decisions live in Linear [DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown) (parent, source of truth) and [DIDI-649](https://linear.app/didi-build/issue/DIDI-649/nodrift-versioned-package-check-and-init-that-keeps-privacy-docs-from) (comments). This ADR records those decisions for implementers and agents. Status stays **proposed** until a maintainer accepts it in review; merge to `main` does not by itself flip status — the maintainer sets **accepted** when satisfied.
+Planning and the locked v1 decisions live in Linear [DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown) (parent, source of truth) and [DIDI-649](https://linear.app/didi-build/issue/DIDI-649/nodrift-versioned-package-check-and-init-that-keeps-privacy-docs-from) (comments). This ADR records those decisions for implementers and agents. It is **accepted** when merged to `main`; implementation tickets start after that merge ([DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown) requires no code before the ADR is merged).
 
 ## Decision summary
 
@@ -119,7 +119,7 @@ Planning and the locked v1 decisions live in Linear [DIDI-659](https://linear.ap
 
 - [`we-met`](https://github.com/didi-build/we-met)’s existing flat per-column map is converted **once** at adoption ([DIDI-651](https://linear.app/didi-build/issue/DIDI-651)); the loader supports **only** this grouped format in v1.
 
-**Illustrative example** (from [DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown); abbreviated):
+**Illustrative example** (from [DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown); abbreviated). Illustrative values only; paths and descriptions are not taken from a real repository.
 
 ```yaml
 schema_version: 1
@@ -249,7 +249,7 @@ other_items:
 
 ### Reasons
 
-- Scoped naming matches other `@didi-build/*` packages and clarifies ownership.
+- The scope identifies the owning organization.
 - OIDC + provenance matches org supply-chain expectations without stored tokens.
 - Reserving `nodrift` prevents confusion and typosquatting on the product name.
 
@@ -320,7 +320,7 @@ Which Wrangler binding types count as data stores for Check 2 is **built in** (n
 - **`@didi-build/nodrift` uses SemVer.**
 - **Patch:** bug fixes, clearer diagnostics, no new failures on unchanged repos.
 - **Minor:** new checks that may fail existing repos, new optional `init` outputs, backward-compatible config keys. **New checks in a minor release run as normal failing checks** — the failure appears on the Dependabot upgrade PR with the fix named in the message and `CHANGELOG.md`; auto-merge waits for green, so `main` does not go red.
-- **Major:** breaking changes to the map contract, config shape, or CLI exit-code contract.
+- **Major:** a breaking change — a `schema_version` change, or removing or renaming a command, flag, config key, or exit code — including breaking changes to the map contract or config shape.
 - **`schema_version` ↔ package major:** Package major **N** reads and writes map **`schema_version` N** only. A breaking map schema change ships as a **new package major** with migration notes in `CHANGELOG.md`.
 - **Release numbering:** Build and publish **`0.x`** during development; publish **`1.0.0`** only after [`we-met` has adopted nodrift](https://linear.app/didi-build/issue/DIDI-651) ([DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown)).
 - **Deprecations:** Warn for **one minor** release before removal.
@@ -397,13 +397,13 @@ Not implemented in v1; included so v1 `init` and the map format stay compatible.
 
 ### Node floor evidence
 
-| Node version | `import('node:sqlite')` without `--experimental-sqlite` | Notes                                                                                                                                                                                               |
-| ------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 22.5.1       | **Fail** (`ERR_UNKNOWN_BUILTIN_MODULE`)                 | Maintainer verification ([DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown))                                                            |
-| 22.12.0      | **Fail** (`ERR_UNKNOWN_BUILTIN_MODULE`)                 | Maintainer verification; re-run in this repo: `npx -y node@22.12.0 -e "import('node:sqlite').then(()=>console.log('OK')).catch(e=>console.log('FAIL',e.code))"` → `FAIL ERR_UNKNOWN_BUILTIN_MODULE` |
-| 22.13.0      | **OK** (prints `ExperimentalWarning`)                   | Maintainer verification; re-run: `npx -y node@22.13.0 -e "import('node:sqlite').then(()=>console.log('OK')).catch(e=>console.log('FAIL',e.code))"` → `OK`                                           |
-| 22.13.1      | **OK** (prints `ExperimentalWarning`)                   | Maintainer verification ([DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown))                                                            |
-| 22.14.0      | **OK** (prints `ExperimentalWarning`)                   | Maintainer verification; matches this environment’s default Node                                                                                                                                    |
+| Node version | `import('node:sqlite')` without `--experimental-sqlite` | Notes                                                                                                                                                                                     |
+| ------------ | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 22.5.1       | **Fail** (`ERR_UNKNOWN_BUILTIN_MODULE`)                 | Tested 2026-10-18 on Linux x64 with `npx -y node@22.5.1` ([DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown))                 |
+| 22.12.0      | **Fail** (`ERR_UNKNOWN_BUILTIN_MODULE`)                 | Tested 2026-10-18 on Linux x64 with `npx -y node@22.12.0 -e "import('node:sqlite').then(()=>console.log('OK')).catch(e=>console.log('FAIL',e.code))"` → `FAIL ERR_UNKNOWN_BUILTIN_MODULE` |
+| 22.13.0      | **OK** (prints `ExperimentalWarning`)                   | Tested 2026-10-18 on Linux x64 with `npx -y node@22.13.0 -e "import('node:sqlite').then(()=>console.log('OK')).catch(e=>console.log('FAIL',e.code))"` → `OK`                              |
+| 22.13.1      | **OK** (prints `ExperimentalWarning`)                   | Tested 2026-10-18 on Linux x64 with `npx -y node@22.13.1` ([DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown))                |
+| 22.14.0      | **OK** (prints `ExperimentalWarning`)                   | Tested 2026-10-18 on Linux x64 with `npx -y node@22.14.0`; matches this environment’s default Node                                                                                        |
 
 Node [22.13.0](https://nodejs.org/en/blog/release/v22.13.0) unflagged `node:sqlite` (still experimental).
 
@@ -435,7 +435,7 @@ These are **not** locked in [DIDI-659](https://linear.app/didi-build/issue/DIDI-
 
 ## Consequences
 
-- Implementation tickets can land `check` and `init` in any order once this ADR is **accepted**, but **no production code before acceptance** (see `AGENTS.md`).
+- Implementation tickets can land `check` and `init` in any order once this ADR is merged to `main`; **no production code before that merge** (see `AGENTS.md`).
 - Consumer repos need Node **22.13+** in CI for `check`.
 - First consumer integration ([`we-met`](https://github.com/didi-build/we-met), [DIDI-651](https://linear.app/didi-build/issue/DIDI-651)) needs its map **converted to the grouped format**, not a `nodrift.jsonc` config file.
 - v2 `sync` can add `managed` kinds and regeneration without breaking v1 maps or manifests that only contain `owned` files.

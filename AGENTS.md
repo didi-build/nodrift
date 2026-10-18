@@ -36,10 +36,10 @@ This file is the single source of truth for how agents work in this repository. 
 
 ## Nodrift specifics
 
-- **Design:** [docs/decisions/0003-nodrift-v1-design.md](./docs/decisions/0003-nodrift-v1-design.md) (status **proposed** until a maintainer accepts it). Parent decisions: [DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown).
+- **Design:** [docs/decisions/0003-nodrift-v1-design.md](./docs/decisions/0003-nodrift-v1-design.md) (accepted when merged to `main`). Parent decisions: [DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown).
 - **v1 scope guard:** Only what that ADR lists under v1 (`check`, `init`, and the two `check` rules) belongs in v1 work. Everything else (including `sync` and managed-file generation) waits for v2.
 - **Dependencies:** At most one YAML parser and one JSONC parser as runtime deps, exact-pinned, each with no dependencies of its own (see ADR). Do not add other runtime dependencies without a new ADR.
-- **No implementation before the ADR is accepted** on `main` — docs/decisions first, then code tickets.
+- **No implementation before the ADR is merged to `main`** — docs/decisions first, then code tickets after merge.
 - **README:** Each feature PR adds or updates the README section for that command or config surface.
 
 ## Scope and tickets
