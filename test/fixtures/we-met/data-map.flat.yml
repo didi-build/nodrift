@@ -1,0 +1,1178 @@
+- id: accounts.id
+  table: accounts
+  column: id
+  whose: operational
+  data: Account UUID
+  purpose: primary key and foreign-key target
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone after deletion request
+  who_can_see: operator
+  source: src/app-auth/accounts.ts
+  verified: true
+- id: accounts.google_sub
+  table: accounts
+  column: google_sub
+  whose: card_owner
+  data: Google account subject identifier
+  purpose: sign-in identity and uniqueness
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone (replaced with deleted:<id>)
+  who_can_see: operator
+  source: src/app-auth/accounts.ts
+  verified: true
+- id: accounts.email
+  table: accounts
+  column: email
+  whose: card_owner
+  data: Google account email (normalized lowercase)
+  purpose: sign-in, owner lead sink resolution, reply-to and vCard in visitor email
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone (blanked on delete)
+  who_can_see: operator; visitors who exchange details (via email and vCard, not in D1)
+  source: src/app-auth/accounts.ts
+  verified: true
+- id: accounts.name
+  table: accounts
+  column: name
+  whose: card_owner
+  data: Google account display name (full name at sign-in; seeds card contact.name parts used in visitor email)
+  purpose: app UI, default card naming, visitor follow-up From and signature when contact fields match Google profile
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone (blanked on delete)
+  who_can_see:
+    operator; public card visitors when used as display fallback; visitors who exchange (Google first name in email
+    From "{given} via We Met", signature given/nickname/family per privacy page)
+  source: src/app-auth/accounts.ts
+  verified: true
+- id: accounts.status
+  table: accounts
+  column: status
+  whose: operational
+  data: Account lifecycle status
+  purpose: access control (waitlisted, active, suspended, deleted)
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone
+  who_can_see: operator
+  source: src/app-auth/accounts.ts
+  verified: true
+- id: accounts.created_at
+  table: accounts
+  column: created_at
+  whose: operational
+  data: Account creation timestamp (ISO-8601 UTC)
+  purpose: audit and support
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone
+  who_can_see: operator
+  source: src/app-auth/accounts.ts
+  verified: true
+- id: accounts.updated_at
+  table: accounts
+  column: updated_at
+  whose: operational
+  data: Account last update timestamp
+  purpose: audit and support
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone
+  who_can_see: operator
+  source: src/app-auth/accounts.ts
+  verified: true
+- id: accounts.last_login_at
+  table: accounts
+  column: last_login_at
+  whose: operational
+  data: Last successful sign-in timestamp
+  purpose: security and support
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone
+  who_can_see: operator
+  source: src/app-auth/accounts.ts
+  verified: true
+- id: sessions.token_hash
+  table: sessions
+  column: token_hash
+  whose: operational
+  data: SHA-256 base64url hash of session cookie token
+  purpose: session lookup
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until sliding or absolute expiry, or explicit logout; row deleted on failed validation
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: sessions.account_id
+  table: sessions
+  column: account_id
+  whose: operational
+  data: Account UUID reference
+  purpose: tie session to account
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as session row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: sessions.created_at
+  table: sessions
+  column: created_at
+  whose: operational
+  data: Session creation time
+  purpose: audit
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as session row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: sessions.expires_at
+  table: sessions
+  column: expires_at
+  whose: operational
+  data: Sliding session expiry (30 days from last touch)
+  purpose: session timeout
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as session row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: sessions.absolute_expires_at
+  table: sessions
+  column: absolute_expires_at
+  whose: operational
+  data: Hard session cap (90 days from creation)
+  purpose: session timeout
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as session row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: sessions.last_seen_at
+  table: sessions
+  column: last_seen_at
+  whose: operational
+  data: Last authenticated request time
+  purpose: sliding window refresh
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as session row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: oauth_attempts.state_hash
+  table: oauth_attempts
+  column: state_hash
+  whose: operational
+  data: SHA-256 base64url hash of OAuth state parameter
+  purpose: CSRF protection for Google OAuth
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: 10 minutes from created_at; row removed on successful callback consume only
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: oauth_attempts.nonce
+  table: oauth_attempts
+  column: nonce
+  whose: operational
+  data: OpenID Connect nonce for ID token validation
+  purpose: Google sign-in security
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as oauth_attempt row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: oauth_attempts.pkce_verifier
+  table: oauth_attempts
+  column: pkce_verifier
+  whose: operational
+  data: PKCE code verifier
+  purpose: Google OAuth security
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as oauth_attempt row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: oauth_attempts.mode
+  table: oauth_attempts
+  column: mode
+  whose: operational
+  data: OAuth UI mode (redirect or popup)
+  purpose: routing callback response
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as oauth_attempt row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: oauth_attempts.created_at
+  table: oauth_attempts
+  column: created_at
+  whose: operational
+  data: OAuth attempt start time
+  purpose: expiry calculation
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as oauth_attempt row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: oauth_attempts.expires_at
+  table: oauth_attempts
+  column: expires_at
+  whose: operational
+  data: OAuth attempt expiry (10 minutes)
+  purpose: limit replay window
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as oauth_attempt row
+  who_can_see: operator
+  source: src/app-auth/sessions.ts
+  verified: true
+- id: card_drafts.account_id
+  table: card_drafts
+  column: account_id
+  whose: operational
+  data: Account UUID
+  purpose: one draft row per account
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until publish or account deletion runbook removes row
+  who_can_see: operator
+  source: migrations/0004_mvp_accounts_additive.sql
+  verified: true
+- id: card_drafts.draft_json
+  table: card_drafts
+  column: draft_json
+  whose: card_owner
+  data:
+    Serialized unpublished card editor state (display name, role, about, services, links, contact including optional phone,
+    copy)
+  purpose: autosave while editing
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until publish or account deletion
+  who_can_see: operator
+  source: src/card-data/types.ts
+  verified: true
+- id: card_drafts.photo_key
+  table: card_drafts
+  column: photo_key
+  whose: card_owner
+  data: R2 object key (SHA-256 hex) for draft card photo
+  purpose: draft photo reference
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until publish replaces key or account deletion
+  who_can_see: operator
+  source: src/images/ingest-card-photo.ts
+  verified: true
+- id: card_drafts.updated_at
+  table: card_drafts
+  column: updated_at
+  whose: operational
+  data: Draft last save timestamp
+  purpose: autosave ordering
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as draft row
+  who_can_see: operator
+  source: migrations/0004_mvp_accounts_additive.sql
+  verified: true
+- id: app_settings.key
+  table: app_settings
+  column: key
+  whose: operational
+  data: Setting name (e.g. signups_open, lead_email_enabled)
+  purpose: feature flags
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (no purge job in repo)
+  who_can_see: operator
+  source: src/app-auth/app-settings.ts
+  verified: true
+- id: app_settings.value
+  table: app_settings
+  column: value
+  whose: operational
+  data: Setting value string
+  purpose: feature flags
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite
+  who_can_see: operator
+  source: src/app-auth/app-settings.ts
+  verified: true
+- id: daily_send_counts.day
+  table: daily_send_counts
+  column: day
+  whose: operational
+  data: UTC calendar day (YYYY-MM-DD)
+  purpose: rate-cap window key
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (no scheduled purge in repo)
+  who_can_see: operator
+  source: src/lead-email/daily-send-counts.ts
+  verified: true
+- id: daily_send_counts.card_id
+  table: daily_send_counts
+  column: card_id
+  whose: operational
+  data: Card UUID
+  purpose: per-card send accounting
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (no scheduled purge in repo)
+  who_can_see: operator
+  source: src/lead-email/daily-send-counts.ts
+  verified: true
+- id: daily_send_counts.kind
+  table: daily_send_counts
+  column: kind
+  whose: operational
+  data: Counter kind (owner or visitor email)
+  purpose: separate caps
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (no scheduled purge in repo)
+  who_can_see: operator
+  source: src/lead-email/daily-send-counts.ts
+  verified: true
+- id: daily_send_counts.count
+  table: daily_send_counts
+  column: count
+  whose: operational
+  data: Emails sent that day for card and kind
+  purpose: abuse and deliverability limits
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (no scheduled purge in repo)
+  who_can_see: operator
+  source: src/lead-email/daily-send-counts.ts
+  verified: true
+- id: photo_upload_log.account_id
+  table: photo_upload_log
+  column: account_id
+  whose: operational
+  data: Account UUID
+  purpose: rate-limit key for photo uploads
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account deletion runbook deletes rows; no TTL job
+  who_can_see: operator
+  source: migrations/0006_photo_upload_log.sql
+  verified: true
+- id: photo_upload_log.uploaded_at
+  table: photo_upload_log
+  column: uploaded_at
+  whose: operational
+  data: Upload timestamp
+  purpose: per-day upload cap (10 per UTC day)
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as photo_upload_log row
+  who_can_see: operator
+  source: src/app/api/app/photo/route.ts
+  verified: true
+- id: cards.id
+  table: cards
+  column: id
+  whose: operational
+  data: Card UUID
+  purpose: primary key
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until card retired or account deleted
+  who_can_see: operator
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.slug
+  table: cards
+  column: slug
+  whose: card_owner
+  data: Public URL slug (/hi/<slug>)
+  purpose: routing and sharing
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: reserved while account exists (retired slug stays taken)
+  who_can_see: public visitors
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.variant
+  table: cards
+  column: variant
+  whose: card_owner
+  data: Brand variant (green or mono)
+  purpose: theming
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until card retired
+  who_can_see: public visitors
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.display_name
+  table: cards
+  column: display_name
+  whose: card_owner
+  data: Public display name on card
+  purpose: public card and visitor follow-up email body
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until card retired
+  who_can_see: public visitors; visitors who exchange (email body when set, else Google name fallback)
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.account_id
+  table: cards
+  column: account_id
+  whose: operational
+  data: Owning account UUID
+  purpose: ownership
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone
+  who_can_see: operator
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.status
+  table: cards
+  column: status
+  whose: operational
+  data: Card lifecycle (live, suspended, retired)
+  purpose: access control
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until account tombstone
+  who_can_see: operator
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.photo_key
+  table: cards
+  column: photo_key
+  whose: card_owner
+  data: R2 object key for published card photo
+  purpose: public card image
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until replaced, retired, or account deletion
+  who_can_see: public visitors
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.links_json
+  table: cards
+  column: links_json
+  whose: card_owner
+  data: Public social and website links JSON
+  purpose: public card
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until card retired
+  who_can_see: public visitors
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.page_copy_json
+  table: cards
+  column: page_copy_json
+  whose: card_owner
+  data: Page metadata copy JSON (titles, alt text)
+  purpose: public card and email templates
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until card retired
+  who_can_see: public visitors
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.contact_json
+  table: cards
+  column: contact_json
+  whose: card_owner
+  data:
+    Structured contact JSON (given and family from Google sign-in by default, optional nickname, org, title, phone,
+    vcard note, URLs)
+  purpose: visitor follow-up From display (given), signature (ownerEmailDisplayName), vCard; phone not on public page
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until card retired
+  who_can_see: operator; visitors after exchange via follow-up email From, signature, body, and vCard attachment
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.copy_json
+  table: cards
+  column: copy_json
+  whose: operational
+  data: UI strings for exchange sheet (no visitor PII)
+  purpose: localized UI copy
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until card retired
+  who_can_see: public visitors
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: cards.updated_at
+  table: cards
+  column: updated_at
+  whose: operational
+  data: Card last publish/update timestamp
+  purpose: audit
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until card retired
+  who_can_see: operator
+  source: migrations/0005_cards_rebuild_mvp.sql
+  verified: true
+- id: hostnames.hostname
+  table: hostnames
+  column: hostname
+  whose: operational
+  data: Custom hostname string for card routing
+  purpose: hostname-to-card lookup
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until hostname removed or card cascade delete
+  who_can_see: operator
+  source: migrations/0001_card_lookup_schema.sql
+  verified: true
+- id: hostnames.card_id
+  table: hostnames
+  column: card_id
+  whose: operational
+  data: Card UUID reference
+  purpose: hostname routing
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: same as hostname row
+  who_can_see: operator
+  source: migrations/0001_card_lookup_schema.sql
+  verified: true
+- id: lead_sinks.id
+  table: lead_sinks
+  column: id
+  whose: operational
+  data: Lead sink UUID
+  purpose: sink dispatch
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until sink deleted or account deletion runbook
+  who_can_see: operator
+  source: src/card-data/lead-sink-kinds/email.ts
+  verified: true
+- id: lead_sinks.card_id
+  table: lead_sinks
+  column: card_id
+  whose: operational
+  data: Card UUID
+  purpose: per-card sinks
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until sink deleted or account deletion runbook
+  who_can_see: operator
+  source: src/card-data/lead-sink-kinds/email.ts
+  verified: true
+- id: lead_sinks.kind
+  table: lead_sinks
+  column: kind
+  whose: operational
+  data: Sink kind (email in v1)
+  purpose: handler selection
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until sink deleted or account deletion runbook
+  who_can_see: operator
+  source: src/card-data/lead-sink-kinds/email.ts
+  verified: true
+- id: lead_sinks.config_json
+  table: lead_sinks
+  column: config_json
+  whose: card_owner
+  data: "Sink config JSON (v1: {to: account_email} sentinel, resolved to accounts.email at enqueue)"
+  purpose: delivery target resolution
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until sink deleted or account deletion runbook
+  who_can_see: operator
+  source: src/card-data/lead-sink-kinds/email.ts
+  verified: true
+- id: lead_sinks.enabled
+  table: lead_sinks
+  column: enabled
+  whose: operational
+  data: Whether sink is active
+  purpose: dispatch gating
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until sink deleted or account deletion runbook
+  who_can_see: operator
+  source: src/card-data/lead-sink-kinds/email.ts
+  verified: true
+- id: lead_sinks.created_at
+  table: lead_sinks
+  column: created_at
+  whose: operational
+  data: Row creation time
+  purpose: audit
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until sink deleted or account deletion runbook
+  who_can_see: operator
+  source: src/card-data/lead-sink-kinds/email.ts
+  verified: true
+- id: lead_sinks.updated_at
+  table: lead_sinks
+  column: updated_at
+  whose: operational
+  data: Row update time
+  purpose: audit
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: until sink deleted or account deletion runbook
+  who_can_see: operator
+  source: src/card-data/lead-sink-kinds/email.ts
+  verified: true
+- id: lead_delivery_ledger.id
+  table: lead_delivery_ledger
+  column: id
+  whose: operational
+  data: Ledger row UUID
+  purpose: idempotency and status tracking
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.lead_id
+  table: lead_delivery_ledger
+  column: lead_id
+  whose: operational
+  data: Opaque lead correlation id (not visitor PII)
+  purpose: tie record and append phases
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.card_id
+  table: lead_delivery_ledger
+  column: card_id
+  whose: operational
+  data: Card UUID
+  purpose: per-card delivery stats
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.sink_id
+  table: lead_delivery_ledger
+  column: sink_id
+  whose: operational
+  data: Lead sink UUID
+  purpose: per-sink delivery
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.sink_kind
+  table: lead_delivery_ledger
+  column: sink_kind
+  whose: operational
+  data: Sink kind string
+  purpose: handler routing
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.phase
+  table: lead_delivery_ledger
+  column: phase
+  whose: operational
+  data: Delivery phase (record or append)
+  purpose: two-phase email sink
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.status
+  table: lead_delivery_ledger
+  column: status
+  whose: operational
+  data: queued, sent, or failed
+  purpose: retry and ops
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.error_code
+  table: lead_delivery_ledger
+  column: error_code
+  whose: operational
+  data: Failure code if failed
+  purpose: support
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.attempt_count
+  table: lead_delivery_ledger
+  column: attempt_count
+  whose: operational
+  data: Delivery attempts
+  purpose: retry policy
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.next_attempt_at
+  table: lead_delivery_ledger
+  column: next_attempt_at
+  whose: operational
+  data: Scheduled retry time
+  purpose: consumer backoff
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.retry_until
+  table: lead_delivery_ledger
+  column: retry_until
+  whose: operational
+  data: Retry budget deadline
+  purpose: queue retention alignment
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.created_at
+  table: lead_delivery_ledger
+  column: created_at
+  whose: operational
+  data: Row creation time
+  purpose: audit
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.updated_at
+  table: lead_delivery_ledger
+  column: updated_at
+  whose: operational
+  data: Row update time
+  purpose: audit
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.sent_at
+  table: lead_delivery_ledger
+  column: sent_at
+  whose: operational
+  data: Successful send time
+  purpose: audit
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.gmail_message_id
+  table: lead_delivery_ledger
+  column: gmail_message_id
+  whose: operational
+  data: Gmail API message id after send
+  purpose: operator mailbox correlation
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.gmail_thread_id
+  table: lead_delivery_ledger
+  column: gmail_thread_id
+  whose: operational
+  data: Gmail API thread id after send
+  purpose: operator mailbox correlation
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: lead_delivery_ledger.external_ref
+  table: lead_delivery_ledger
+  column: external_ref
+  whose: operational
+  data: Opaque JSON correlation ids from sink handler (Gmail ids only for email sink)
+  purpose: record to append handoff
+  storage: D1
+  processors:
+    - Cloudflare
+  retention: indefinite (kept after account deletion per ADR 0025 and privacy page)
+  who_can_see: operator
+  source: docs/decisions/0022-lead-delivery-ledger.md
+  verified: true
+- id: storage.r2.card_photo
+  whose: card_owner
+  data: JPEG card headshot bytes (512x512), content-addressed at bucket root key SHA-256 hex
+  purpose: public card image and email embedding
+  storage: R2 (WE_MET_ASSETS)
+  processors:
+    - Cloudflare
+  retention: while referenced from cards.photo_key or card_drafts.photo_key; replaced uploads may orphan objects
+  who_can_see: public visitors with card URL; operator with bucket access
+  source: src/images/ingest-card-photo.ts
+  verified: true
+- id: storage.d1_restore_points
+  whose: operational
+  data: D1 Time Travel and other restore points for production and non-prod databases
+  purpose: database backup and point-in-time recovery (Cloudflare platform)
+  storage: D1 restore history
+  processors:
+    - Cloudflare
+  retention:
+    restore to any point within 30 days on Workers Paid (7 days on Free); maintainer must confirm plan applies to
+    we-met D1 databases
+  who_can_see: operator with Cloudflare account access
+  source: https://developers.cloudflare.com/d1/reference/time-travel/
+  verified: false
+- id: storage.nonprod_environment
+  whose: operational
+  data:
+    Personal data in preview, local-remote, and shared non-prod D1, R2, and queue bindings (separate resource names from
+    production per wrangler previews block)
+  purpose: PR preview smoke and developer testing
+  storage: D1 we-met-db-nonprod; R2 we-met-assets-nonprod; Queue we-met-followup-email-nonprod
+  processors:
+    - Cloudflare
+  retention:
+    unknown (whether real card-owner or visitor PII can exist in non-prod stores); we-met-followup-email-nonprod queue
+    message retention 86,400 s (24 hours), same dashboard setting as production (2026-10-17)
+  who_can_see: operator; PR preview access per Cloudflare preview policy
+  source: docs/architecture/environments.md
+  verified: false
+- id: queue.visitor_followup
+  whose: visitor
+  data: Visitor lead (name, email, phone) and card email snapshot in visitor_followup message
+  purpose: async visitor follow-up email
+  storage: Cloudflare Queue (we-met-followup-email)
+  processors:
+    - Cloudflare
+  retention:
+    86,400 s (24 hours) per queue setting, read from the Cloudflare dashboard on 2026-10-17; messages are deleted when
+    retention expires (https://developers.cloudflare.com/queues/platform/limits/). Per-queue retention is not pinned in
+    the repo; a recreated queue on Workers Paid would default to 4 days
+    (https://developers.cloudflare.com/queues/platform/pricing/). Consumer retries use exponential backoff
+    (worst-case ~43,290 s / ~12 h before final attempt per docs/architecture/environments.md), then message deleted;
+    FOLLOWUP_RETRY_RETENTION_BUDGET_SECONDS (72_000 s) in scripts/lib/queue-retry-policy.mjs is deploy-guard margin
+    only, not the retry window
+  who_can_see: operator via consumer logs if logged
+  source: https://developers.cloudflare.com/queues/platform/limits/
+  verified: true
+- id: queue.lead_sink_record
+  whose: visitor
+  data: Visitor lead (name, email, phone) in lead_sink_record message plus sink config and card metadata
+  purpose: owner lead email (initial record)
+  storage: Cloudflare Queue
+  processors:
+    - Cloudflare
+  retention: same as queue.visitor_followup
+  who_can_see: operator via consumer
+  source: src/exchange/queue/types.ts
+  verified: true
+- id: queue.lead_sink_append_details
+  whose: visitor
+  data: Visitor lead identifiers plus job title, company, note in lead_sink_append_details message
+  purpose: owner lead email append after details step
+  storage: Cloudflare Queue
+  processors:
+    - Cloudflare
+  retention: same as queue.visitor_followup
+  who_can_see: operator via consumer
+  source: src/exchange/queue/types.ts
+  verified: true
+- id: email.owner_lead_record
+  whose: visitor
+  data: Email to card owner with visitor name, email, phone from exchange
+  purpose: notify owner of new lead
+  storage: Operator Gmail mailbox (sent via Gmail API today)
+  processors:
+    - Cloudflare
+    - Google
+  retention: unknown (mailbox retention; not stored in D1)
+  who_can_see: card owner; operator can read mailbox
+  source: src/followup-email-consumer/lead-sink/email-handler.ts
+  verified: false
+- id: email.owner_lead_append
+  whose: visitor
+  data: Email append to owner thread with visitor job title, company, note
+  purpose: complete lead details to owner
+  storage: Operator Gmail mailbox
+  processors:
+    - Cloudflare
+    - Google
+  retention: unknown
+  who_can_see: card owner; operator
+  source: src/followup-email-consumer/lead-sink/email-handler.ts
+  verified: false
+- id: email.visitor_followup
+  whose: visitor
+  data:
+    Follow-up email to visitor; From display "{owner contact given} via We Met" (platform fallback if unsafe); signature
+    shows given, optional nickname in brackets, and family; body includes card display name (or Google name), role,
+    photo, vCard with Google email and full Google name in FN
+  purpose: reciprocate contact after exchange
+  storage: Visitor inbox via Gmail API send
+  processors:
+    - Cloudflare
+    - Google
+  retention: unknown (recipient and operator mailbox copies)
+  who_can_see: visitor (From, signature, body, vCard); operator mailbox
+  source: src/email/format-visitor-follow-up.ts
+  verified: false
+- id: email.operator_mailbox_visibility
+  whose: operational
+  data: Full MIME of sent lead and follow-up messages in operator-controlled Gmail
+  purpose: email delivery mechanism side effect
+  storage: Google Gmail
+  processors:
+    - Google
+  retention: unknown
+  who_can_see: operator
+  source: src/components/landing/PrivacyPolicyContent.tsx
+  verified: false
+- id: email.provider.placeholder
+  whose: operational
+  data: PLACEHOLDER — outbound email provider (DIDI-628 deciding Cloudflare Email Service vs Gmail)
+  purpose: transactional email delivery
+  storage: TBD
+  processors:
+    - TBD
+  retention: unknown
+  who_can_see: unknown
+  source: docs/decisions/0018-lead-sink.md
+  verified: false
+  notes: Replace this row when DIDI-628 lands; do not treat as factual until then.
+- id: logs.worker_app
+  whose: operational
+  data: Worker logs, invocation logs, persisted traces (query strings redacted)
+  purpose: operations and debugging
+  storage: Cloudflare Workers Observability
+  processors:
+    - Cloudflare
+  retention:
+    Workers Logs 7 days on Workers Paid (3 days on Free); traces retention not documented on pricing page (unknown);
+    head_sampling_rate 1.0 and persist true in wrangler.jsonc
+  who_can_see: operator with Cloudflare account access
+  source: https://developers.cloudflare.com/workers/about/pricing
+  verified: false
+- id: logs.worker_consumer
+  whose: operational
+  data: Follow-up consumer Worker logs and traces
+  purpose: email consumer operations
+  storage: Cloudflare Workers Observability
+  processors:
+    - Cloudflare
+  retention: Workers Logs 7 days on Workers Paid (3 days on Free); traces retention unknown; sampling matches app Worker
+  who_can_see: operator
+  source: https://developers.cloudflare.com/workers/about/pricing
+  verified: false
+- id: auth.google_sign_in
+  whose: card_owner
+  data: "Google OAuth: sub, email, name, email_verified from ID token; access tokens not persisted"
+  purpose: account creation and sign-in
+  storage: Google OAuth (transit); persisted fields in accounts table
+  processors:
+    - Google
+    - Cloudflare
+  retention: "persisted fields: until account deletion; OAuth tokens not stored per privacy page"
+  who_can_see: operator; Google as processor
+  source: src/app-auth/google-oauth.ts
+  verified: true
+- id: abuse.turnstile
+  whose: visitor
+  data: Turnstile response token and client IP sent to Cloudflare siteverify
+  purpose: bot protection on exchange
+  storage: Cloudflare Turnstile (transit)
+  processors:
+    - Cloudflare
+  retention: unknown (Cloudflare Turnstile data handling not documented in repo)
+  who_can_see: Cloudflare
+  source: src/exchange/turnstile.ts
+  verified: false
+- id: abuse.client_ip_rate_limit
+  whose: visitor
+  data: Client IP from cf-connecting-ip used as rate limiter key
+  purpose: abuse protection on exchange and auth routes
+  storage: Cloudflare Rate Limiting binding (in-memory per period, not D1)
+  processors:
+    - Cloudflare
+  retention: unknown (limiter window 60s per wrangler.jsonc; vendor retention unknown)
+  who_can_see: Cloudflare
+  source: src/exchange/client-ip.ts
+  verified: false
+- id: cookie.session
+  whose: card_owner
+  data: Opaque session token in __Host-wm_session HttpOnly cookie
+  purpose: authenticated app sessions
+  storage: visitor browser
+  processors:
+    - Cloudflare
+  retention: max 30d sliding / 90d absolute per src/app-auth/time.ts
+  who_can_see: browser and server
+  source: src/app-auth/cookies.ts
+  verified: true
+- id: cookie.oauth_state
+  whose: card_owner
+  data: OAuth state value in __Host-wm_oauth HttpOnly cookie (max 10 minutes)
+  purpose: Google OAuth CSRF protection
+  storage: visitor browser
+  processors:
+    - Cloudflare
+  retention: 10 minutes or until callback clears cookie
+  who_can_see: browser
+  source: src/app-auth/cookies.ts
+  verified: true
+- id: browser.details_exchange_token
+  whose: visitor
+  data: Signed details token with visitor name, email, lead and card ids (2h TTL)
+  purpose: second-step details form authorization
+  storage: visitor browser (JSON response field, client-held)
+  processors:
+    - Cloudflare
+  retention: 2 hours or until used/expired (src/exchange/token.ts); not stored server-side after issue
+  who_can_see: visitor browser
+  source: src/exchange/token.ts
+  verified: true
+- id: browser.local_storage_theme
+  whose: visitor
+  data: Theme preference (light/dark) under localStorage key card-theme
+  purpose: UI preference on public card
+  storage: visitor browser localStorage
+  processors: []
+  retention: until user clears site data
+  who_can_see: visitor device only
+  source: src/lib/theme-storage-key.ts
+  verified: true
+- id: browser.local_storage_app_theme
+  whose: card_owner
+  data: App editor theme preference key wemet-app-theme
+  purpose: UI preference in app
+  storage: visitor browser localStorage
+  processors: []
+  retention: until user clears site data
+  who_can_see: card owner device
+  source: src/lib/app-theme-storage-key.ts
+  verified: true
+- id: browser.local_storage_chips_opened
+  whose: visitor
+  data: Flag card-chips-opened whether services chips were opened
+  purpose: UX state on public card
+  storage: visitor browser localStorage
+  processors: []
+  retention: until user clears site data
+  who_can_see: visitor device
+  source: src/components/hi/hi-chip-popover-position.ts
+  verified: true

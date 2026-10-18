@@ -25,6 +25,85 @@ Created from [Launchpad](https://github.com/didi-build/launchpad) by Didi Build 
 | `.github/workflows/ci.yml`, `dependabot-automerge.yml`, `.github/dependabot.yml` | CI (`npm run check`), Dependabot config, and green Dependabot auto-merge                  |
 | `.husky/`                                                                        | Fast pre-commit checks + secret scan                                                      |
 
+## The data map
+
+Privacy inventory lives in **`docs/privacy/data-map.yml`** (grouped format, `schema_version: 1`). A companion **`docs/privacy/subprocessors.yml`** lists vendors at a high level.
+
+**Top level**
+
+- `schema_version` (required) — `1` today; a **newer integer is fatal** (`upgrade nodrift`); other values are validation findings.
+- `d1_tables` — one entry per D1 table with `defaults` (shared fields) and `columns` (every column by name; use `id: {}` when a column inherits defaults).
+- `other_items` — non-tabular stores (R2, queues, cookies, …) with a unique `id` and optional `binding:` for Wrangler names.
+
+**Rules (validation)**
+
+- Unknown keys at any level are **errors** (with a “did you mean …?” hint when the key is one typo away).
+- Allowed column / default fields: `whose`, `data`, `purpose`, `storage`, `processors`, `retention`, `who_can_see`, `source`, `verified`, `notes`. Types are checked (`processors` is a list of strings; `verified` is boolean).
+- **Merge:** per field; a column override replaces the default entirely (lists are replaced, not appended).
+- `whose` is a free-form string; only `operational` and `TODO` are reserved.
+- **Personal-data tables:** if any column is not `operational`, `defaults` must **not** set `whose`, and every column must declare `whose` (bare `{}` fails with **needs `whose`**). Purely operational tables may use `whose: operational` in `defaults`.
+- Personal-data columns (and all `other_items`) need `data`, `purpose`, `processors`, and `retention` after merge. `processors` may be `[]` (“no processors”). `whose: TODO` yields only a **classify this** finding until classified.
+
+**Loader API** (`src/`)
+
+| Function                                    | Role                                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `parseDataMap(text, filePath)`              | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                         |
+| `expandDataMap(map)`                        | Effective entry per D1 column and per `other_item`, with source paths for each field. |
+| `parseSubprocessors(text, filePath)`        | Light shape check for `subprocessors.yml`.                                            |
+| `loadDataMapFile` / `loadSubprocessorsFile` | Thin `readFileSync` wrappers around the parsers.                                      |
+
+**Exit mapping (for the CLI)**
+
+| Kind         | Examples                                                                 | CLI exit code |
+| ------------ | ------------------------------------------------------------------------ | ------------- |
+| **Fatal**    | Unreadable file, YAML syntax error, unsupported newer `schema_version`   | `2`           |
+| **Findings** | Unknown keys, missing `whose`, personal-data requirements, duplicate ids | `1`           |
+
+**Example** (abbreviated; see [ADR 0003](./docs/decisions/0003-nodrift-v1-design.md)):
+
+```yaml
+schema_version: 1
+
+d1_tables:
+  sessions:
+    defaults:
+      whose: operational
+      storage: D1
+      processors: [Cloudflare]
+      retention: until session expiry
+      who_can_see: operator
+      source: src/app-auth/sessions.ts
+      verified: true
+    columns:
+      token_hash: {}
+      account_id: {}
+
+  accounts:
+    defaults:
+      storage: D1
+      processors: [Cloudflare]
+      who_can_see: operator
+      source: src/app-auth/accounts.ts
+    columns:
+      email:
+        whose: card_owner
+        data: Google account email
+        purpose: sign-in
+        retention: until account tombstone
+        verified: true
+
+other_items:
+  - id: queue.visitor_followup
+    binding: [WE_MET_FOLLOWUP_EMAIL_QUEUE]
+    whose: visitor
+    data: Visitor follow-up email job payload
+    purpose: async visitor email after card exchange
+    processors: [Cloudflare]
+    retention: until queue consumer deletes message
+    verified: true
+```
+
 ## Commands
 
 ```bash
