@@ -1,12 +1,29 @@
 {
-  "name": "nodrift",
+  "name": "@didi-build/nodrift",
   "version": "0.0.0",
   "private": true,
   "description": "Keeps privacy docs from drifting from the code.",
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "author": "Didi Build",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/didi-build/nodrift.git"
+  },
+  "bugs": {
+    "url": "https://github.com/didi-build/nodrift/issues"
+  },
+  "homepage": "https://github.com/didi-build/nodrift#readme",
+  "keywords": [
+    "privacy",
+    "pipeda",
+    "compliance",
+    "data-map",
+    "cloudflare",
+    "d1"
+  ],
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run secrets && npm run secret-usage && npm run placeholders && npm run attribution",
