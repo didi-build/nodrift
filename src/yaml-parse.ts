@@ -28,7 +28,10 @@ export function parseYamlDocument(text: string, filePath: string): YamlParseResu
     return { ok: true, value };
   } catch (err) {
     if (err instanceof YAMLParseError) {
-      const detail = err.message.split("\n")[0] ?? err.message;
+      let detail = err.message.split("\n")[0] ?? err.message;
+      if (detail.endsWith(":")) {
+        detail = detail.slice(0, -1);
+      }
       return {
         ok: false,
         error: fatal(filePath, `YAML syntax error: ${detail}`),

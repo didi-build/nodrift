@@ -1,10 +1,11 @@
-import type { Finding } from "../findings.js";
+import type { Finding, FatalError } from "../findings.js";
 import { finding, fatal } from "../findings.js";
 import {
   COLUMN_FIELD_KEYS,
   DATA_MAP_TOP_LEVEL_KEYS,
   isNonEmptyString,
   isString,
+  isStringList,
   OTHER_ITEM_KEYS,
   SUPPORTED_DATA_MAP_SCHEMA_VERSION,
   TABLE_KEYS,
@@ -67,10 +68,6 @@ function parseColumnOverride(
   return out;
 }
 
-function isStringList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
 function parseTableDefaults(
   raw: unknown,
   findings: Finding[],
@@ -93,13 +90,32 @@ function parseTableDefaults(
     );
     return undefined;
   }
-  validateColumnFields(findings, file, yamlPath, record);
   return parseColumnOverride(raw, findings, file, yamlPath);
 }
 
-function tableHasPersonalColumn(columns: Record<string, ColumnOverride>): boolean {
+function columnWhoseIsPersonal(whose: string): boolean {
+  return whose !== "operational";
+}
+
+function tableHoldsPersonalData(
+  columns: Record<string, ColumnOverride>,
+  defaults?: TableDefaults,
+): boolean {
+  const defaultWhose = defaults?.whose;
+  if (defaultWhose !== undefined && defaultWhose !== "operational") {
+    if (
+      defaultWhose === "TODO" &&
+      !Object.values(columns).some(
+        (override) =>
+          override.whose !== undefined && columnWhoseIsPersonal(override.whose),
+      )
+    ) {
+      return false;
+    }
+    return true;
+  }
   for (const override of Object.values(columns)) {
-    if (override.whose !== undefined && override.whose !== "operational") {
+    if (override.whose !== undefined && columnWhoseIsPersonal(override.whose)) {
       return true;
     }
   }
@@ -155,6 +171,89 @@ function validatePersonalRequirements(
   }
 
   if (!("processors" in merged)) {
+    findings.push(
+      finding(
+        file,
+        `${yamlPath}.processors`,
+        "missing_required_field",
+        "missing required field `processors`",
+        "add `processors` as a list (use `[]` when there are no subprocessors)",
+      ),
+    );
+  }
+}
+
+function validateOtherItemRequirements(
+  findings: Finding[],
+  file: string,
+  yamlPath: string,
+  record: Record<string, unknown>,
+): void {
+  if (
+    !("whose" in record) ||
+    record.whose === undefined ||
+    (isString(record.whose) && !isNonEmptyString(record.whose))
+  ) {
+    if (!("whose" in record) || record.whose === undefined) {
+      findings.push(
+        finding(
+          file,
+          `${yamlPath}.whose`,
+          "missing_required_field",
+          "missing required field `whose`",
+          "add `whose` for this item",
+        ),
+      );
+    } else {
+      findings.push(
+        finding(
+          file,
+          `${yamlPath}.whose`,
+          "empty_required_string",
+          "`whose` must be a non-empty string",
+          "set `whose` to a classification string",
+        ),
+      );
+    }
+  } else if (isString(record.whose) && record.whose === "TODO") {
+    findings.push(
+      finding(
+        file,
+        `${yamlPath}.whose`,
+        "whose_todo",
+        "classify this",
+        "replace `whose: TODO` with a real classification (not `operational` unless there is no personal data)",
+      ),
+    );
+    return;
+  }
+
+  for (const field of ["data", "purpose", "retention"] as const) {
+    const value = record[field];
+    if (value === undefined) {
+      findings.push(
+        finding(
+          file,
+          `${yamlPath}.${field}`,
+          "missing_required_field",
+          `missing required field \`${field}\``,
+          `add \`${field}\` for this other item`,
+        ),
+      );
+    } else if (!isNonEmptyString(value)) {
+      findings.push(
+        finding(
+          file,
+          `${yamlPath}.${field}`,
+          "empty_required_string",
+          `\`${field}\` must be a non-empty string`,
+          `set \`${field}\` to a non-empty description`,
+        ),
+      );
+    }
+  }
+
+  if (!("processors" in record)) {
     findings.push(
       finding(
         file,
@@ -235,8 +334,8 @@ function validateD1Table(
     );
   }
 
-  const mixed = tableHasPersonalColumn(columns);
-  if (mixed && defaults?.whose !== undefined) {
+  const holdsPersonal = tableHoldsPersonalData(columns, defaults);
+  if (holdsPersonal && defaults?.whose !== undefined) {
     findings.push(
       finding(
         file,
@@ -258,7 +357,7 @@ function validateD1Table(
     let effectiveWhose: string | undefined;
     if (override.whose !== undefined) {
       effectiveWhose = override.whose;
-    } else if (!mixed && defaults?.whose !== undefined) {
+    } else if (!holdsPersonal && defaults?.whose !== undefined) {
       effectiveWhose = defaults.whose;
     }
 
@@ -322,8 +421,7 @@ function parseOtherItem(
   }
 
   const itemPath = `other_items.${id}`;
-  const merged: Record<string, unknown> = { ...record };
-  validatePersonalRequirements(findings, file, itemPath, merged);
+  validateOtherItemRequirements(findings, file, itemPath, record);
 
   const processors = record.processors;
   const item: OtherItem = {
@@ -367,7 +465,21 @@ function parseOtherItem(
 
 export type ValidateDataMapRootResult =
   | { ok: true; map: DataMap; findings: Finding[] }
-  | { ok: false; fatal: import("../findings.js").FatalError; findings: Finding[] };
+  | { ok: false; fatal: FatalError; findings: Finding[] };
+
+function dedupeFindings(findings: Finding[]): Finding[] {
+  const seen = new Set<string>();
+  const out: Finding[] = [];
+  for (const f of findings) {
+    const key = `${f.path}\0${f.code}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(f);
+  }
+  return out;
+}
 
 export function validateDataMapRoot(
   root: unknown,
@@ -469,16 +581,6 @@ export function validateDataMapRoot(
         }
       }
     }
-  } else {
-    findings.push(
-      finding(
-        filePath,
-        "d1_tables",
-        "missing_d1_tables",
-        "missing required `d1_tables`",
-        "add a `d1_tables` section",
-      ),
-    );
   }
 
   const otherItems: OtherItem[] = [];
@@ -518,16 +620,6 @@ export function validateDataMapRoot(
         }
       });
     }
-  } else {
-    findings.push(
-      finding(
-        filePath,
-        "other_items",
-        "missing_other_items",
-        "missing required `other_items`",
-        "add an `other_items` list (use `[]` if empty)",
-      ),
-    );
   }
 
   const map: DataMap = {
@@ -536,7 +628,7 @@ export function validateDataMapRoot(
     other_items: otherItems,
   };
 
-  return { ok: true, map, findings };
+  return { ok: true, map, findings: dedupeFindings(findings) };
 }
 
 function emptyMap(): DataMap {

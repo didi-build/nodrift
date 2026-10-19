@@ -1,4 +1,4 @@
-import type { Finding } from "../findings.js";
+import type { Finding, FatalError } from "../findings.js";
 
 export type Subprocessor = {
   name: string;
@@ -20,7 +20,7 @@ export type ParseSubprocessorsSuccess = {
 };
 
 export type ParseSubprocessorsFatal = {
-  fatal: import("../findings.js").FatalError;
+  fatal: FatalError;
 };
 
 export type ParseSubprocessorsResult =

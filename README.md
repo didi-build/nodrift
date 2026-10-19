@@ -32,8 +32,8 @@ Privacy inventory lives in **`docs/privacy/data-map.yml`** (grouped format, `sch
 **Top level**
 
 - `schema_version` (required) — `1` today; a **newer integer is fatal** (`upgrade nodrift`); other values are validation findings.
-- `d1_tables` — one entry per D1 table with `defaults` (shared fields) and `columns` (every column by name; use `id: {}` when a column inherits defaults).
-- `other_items` — non-tabular stores (R2, queues, cookies, …) with a unique `id` and optional `binding:` for Wrangler names.
+- `d1_tables` (optional, defaults to empty) — one entry per D1 table with `defaults` (shared fields) and `columns` (every column by name; use `id: {}` when a column inherits defaults).
+- `other_items` (optional, defaults to empty) — non-tabular stores (R2, queues, cookies, …) with a unique `id` and optional `binding:` for Wrangler names.
 
 **Rules (validation)**
 
@@ -41,24 +41,24 @@ Privacy inventory lives in **`docs/privacy/data-map.yml`** (grouped format, `sch
 - Allowed column / default fields: `whose`, `data`, `purpose`, `storage`, `processors`, `retention`, `who_can_see`, `source`, `verified`, `notes`. Types are checked (`processors` is a list of strings; `verified` is boolean).
 - **Merge:** per field; a column override replaces the default entirely (lists are replaced, not appended).
 - `whose` is a free-form string; only `operational` and `TODO` are reserved.
-- **Personal-data tables:** if any column is not `operational`, `defaults` must **not** set `whose`, and every column must declare `whose` (bare `{}` fails with **needs `whose`**). Purely operational tables may use `whose: operational` in `defaults`.
-- Personal-data columns (and all `other_items`) need `data`, `purpose`, `processors`, and `retention` after merge. `processors` may be `[]` (“no processors”). `whose: TODO` yields only a **classify this** finding until classified.
+- **Personal-data tables:** a table “holds personal data” when any column declares a non-`operational` `whose`, or when `defaults.whose` is set to anything other than `operational` (except `defaults.whose: TODO` on an otherwise purely operational table, which yields a **classify this** finding per column). In that case `defaults` must **not** set `whose`, and every column must declare `whose` (bare `{}` fails with **needs `whose`**). Purely operational tables may use `whose: operational` in `defaults`.
+- Personal-data columns need `data`, `purpose`, `processors`, and `retention` after merge. **Every `other_items` entry** needs `whose`, `data`, `purpose`, `processors`, and `retention` (including `whose: operational`). `processors` may be `[]` (“no processors”). `whose: TODO` yields only a **classify this** finding until classified.
 
 **Loader API** (`src/`)
 
-| Function                                    | Role                                                                                  |
-| ------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `parseDataMap(text, filePath)`              | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                         |
-| `expandDataMap(map)`                        | Effective entry per D1 column and per `other_item`, with source paths for each field. |
-| `parseSubprocessors(text, filePath)`        | Light shape check for `subprocessors.yml`.                                            |
-| `loadDataMapFile` / `loadSubprocessorsFile` | Thin `readFileSync` wrappers around the parsers.                                      |
+| Function                                    | Role                                                                                                                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseDataMap(text, filePath)`              | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                         |
+| `expandDataMap(map)`                        | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing. |
+| `parseSubprocessors(text, filePath)`        | Light shape check for `subprocessors.yml`.                                                                                                                            |
+| `loadDataMapFile` / `loadSubprocessorsFile` | Thin `readFileSync` wrappers around the parsers.                                                                                                                      |
 
 **Exit mapping (for the CLI)**
 
-| Kind         | Examples                                                                 | CLI exit code |
-| ------------ | ------------------------------------------------------------------------ | ------------- |
-| **Fatal**    | Unreadable file, YAML syntax error, unsupported newer `schema_version`   | `2`           |
-| **Findings** | Unknown keys, missing `whose`, personal-data requirements, duplicate ids | `1`           |
+| Kind         | Examples                                                                                    | CLI exit code |
+| ------------ | ------------------------------------------------------------------------------------------- | ------------- |
+| **Fatal**    | Unreadable file, YAML syntax error, duplicate YAML keys, unsupported newer `schema_version` | `2`           |
+| **Findings** | Unknown keys, missing `whose`, personal-data requirements, duplicate ids                    | `1`           |
 
 **Example** (abbreviated; see [ADR 0003](./docs/decisions/0003-nodrift-v1-design.md)):
 

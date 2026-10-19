@@ -28,6 +28,11 @@ function sourceField<T>(
   return undefined;
 }
 
+/**
+ * Returns one effective entry per D1 column and per `other_item`, with defaults merged.
+ * D1 columns that fail validation because `whose` is missing are omitted; callers must
+ * stop on loader findings before comparing expanded output to expectations.
+ */
 export function expandDataMap(map: DataMap): ExpandedEntry[] {
   const entries: ExpandedEntry[] = [];
 
@@ -157,6 +162,14 @@ export function expandDataMap(map: DataMap): ExpandedEntry[] {
     });
   }
 
-  entries.sort((a, b) => a.id.localeCompare(b.id));
+  entries.sort((a, b) => {
+    if (a.id < b.id) {
+      return -1;
+    }
+    if (a.id > b.id) {
+      return 1;
+    }
+    return 0;
+  });
   return entries;
 }

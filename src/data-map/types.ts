@@ -1,4 +1,4 @@
-import type { Finding } from "../findings.js";
+import type { Finding, FatalError } from "../findings.js";
 
 export type ColumnOverride = {
   whose?: string;
@@ -47,7 +47,7 @@ export type ParseDataMapSuccess = {
 };
 
 export type ParseDataMapFatal = {
-  fatal: import("../findings.js").FatalError;
+  fatal: FatalError;
 };
 
 export type ParseDataMapResult = ParseDataMapSuccess | ParseDataMapFatal;

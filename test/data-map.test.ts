@@ -42,6 +42,13 @@ other_items: []
     expect(findings).toEqual([]);
   });
 
+  it("accepts schema_version only (optional sections default empty)", () => {
+    const { map, findings } = parseMap("schema_version: 1\n");
+    expect(findings).toEqual([]);
+    expect(map.d1_tables).toEqual({});
+    expect(map.other_items).toEqual([]);
+  });
+
   it("reports typo hint for unknown keys", () => {
     const yaml = base.replace("retention: until expiry", "retenton: until expiry");
     const { findings } = parseMap(yaml);
@@ -123,6 +130,72 @@ other_items: []
 `;
     const { findings } = parseMap(yaml);
     expect(findings.some((f) => f.message === "classify this")).toBe(true);
+  });
+
+  it("rejects default personal whose with bare columns", () => {
+    const yaml = `schema_version: 1
+d1_tables:
+  accounts:
+    defaults:
+      whose: card_owner
+      data: shared
+      purpose: shared
+      processors: []
+      retention: forever
+    columns:
+      email: {}
+      name: {}
+other_items: []
+`;
+    const { findings } = parseMap(yaml);
+    expect(findings.some((f) => f.code === "defaults_whose_on_personal_table")).toBe(
+      true,
+    );
+    expect(findings.filter((f) => f.code === "column_needs_whose")).toHaveLength(2);
+  });
+
+  it("accepts defaults whose operational with all-operational columns", () => {
+    const yaml = `schema_version: 1
+d1_tables:
+  sessions:
+    defaults:
+      whose: operational
+      storage: D1
+      processors: [Cloudflare]
+      retention: until expiry
+      data: x
+      purpose: y
+    columns:
+      id: {}
+      token: {}
+other_items: []
+`;
+    const { findings } = parseMap(yaml);
+    expect(findings).toEqual([]);
+  });
+
+  it("reports whose TODO per column when defaults whose is TODO", () => {
+    const yaml = `schema_version: 1
+d1_tables:
+  sessions:
+    defaults:
+      whose: TODO
+      storage: D1
+      processors: [Cloudflare]
+      retention: until expiry
+      data: x
+      purpose: y
+    columns:
+      id: {}
+other_items: []
+`;
+    const { findings } = parseMap(yaml);
+    expect(findings).toEqual([
+      expect.objectContaining({
+        path: "d1_tables.sessions.columns.id.whose",
+        message: "classify this",
+      }),
+    ]);
   });
 
   it("rejects defaults whose on mixed personal-data table", () => {
@@ -241,12 +314,157 @@ other_items:
     const result = parseDataMap("schema_version: 1\nschema_version: 1", "m.yml");
     expect("fatal" in result).toBe(true);
     if ("fatal" in result) {
-      expect(result.fatal.message).toMatch(/^YAML syntax error:/);
+      expect(result.fatal.message).toBe(
+        "YAML syntax error: Map keys must be unique at line 2, column 1",
+      );
+      expect(result.fatal.message.endsWith(":")).toBe(false);
     }
+  });
+
+  it("reports defaults type error only once", () => {
+    const yaml = `schema_version: 1
+d1_tables:
+  sessions:
+    defaults:
+      whose: operational
+      processors: nope
+    columns:
+      id: {}
+other_items: []
+`;
+    const { findings } = parseMap(yaml);
+    const processorFindings = findings.filter(
+      (f) =>
+        f.path === "d1_tables.sessions.defaults.processors" &&
+        f.code === "invalid_type",
+    );
+    expect(processorFindings).toHaveLength(1);
+  });
+
+  it("rejects whitespace-only retention on personal column", () => {
+    const yaml = `schema_version: 1
+d1_tables:
+  browser:
+    columns:
+      theme:
+        whose: visitor
+        data: theme
+        purpose: ui
+        processors: []
+        retention: "   "
+other_items: []
+`;
+    const { findings } = parseMap(yaml);
+    expect(findings.some((f) => f.code === "empty_required_string")).toBe(true);
+  });
+
+  it("rejects operational other_items entry missing required fields", () => {
+    const yaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: logs.worker
+    whose: operational
+`;
+    const { findings } = parseMap(yaml);
+    expect(findings.some((f) => f.path === "other_items.logs.worker.data")).toBe(true);
+    expect(findings.some((f) => f.path === "other_items.logs.worker.processors")).toBe(
+      true,
+    );
+  });
+
+  it("rejects other_items entry missing whose", () => {
+    const yaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: logs.worker
+    data: d
+    purpose: p
+    processors: []
+    retention: r
+`;
+    const { findings } = parseMap(yaml);
+    const f = findings.find((x) => x.path === "other_items.logs.worker.whose");
+    expect(f?.code).toBe("missing_required_field");
+    expect(f?.message).toBe("missing required field `whose`");
+  });
+
+  it("accepts operational other_items with all five fields", () => {
+    const yaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: logs.worker
+    whose: operational
+    data: worker logs
+    purpose: ops
+    processors: []
+    retention: 30d
+`;
+    const { findings } = parseMap(yaml);
+    expect(findings).toEqual([]);
+  });
+
+  it("accepts processors: [] on other_items", () => {
+    const yaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: browser.theme
+    whose: visitor
+    data: theme
+    purpose: ui
+    processors: []
+    retention: session
+`;
+    const { findings } = parseMap(yaml);
+    expect(findings).toEqual([]);
+  });
+});
+
+describe("expandDataMap", () => {
+  it("omits D1 columns missing whose", () => {
+    const yaml = `schema_version: 1
+d1_tables:
+  accounts:
+    defaults:
+      processors: [Cloudflare]
+    columns:
+      email:
+        whose: card_owner
+        data: email
+        purpose: sign-in
+        processors: [Cloudflare]
+        retention: forever
+      status: {}
+other_items: []
+`;
+    const { map, findings } = parseMap(yaml);
+    expect(findings.some((f) => f.code === "column_needs_whose")).toBe(true);
+    const expanded = expandDataMap(map);
+    expect(expanded.map((e) => e.id)).toEqual(["accounts.email"]);
   });
 });
 
 describe("parseSubprocessors", () => {
+  it("rejects whitespace-only subprocessor name", () => {
+    const result = parseSubprocessors(
+      `schema_version: 1
+subprocessors:
+  - name: "  "
+    purpose: hosting
+    data: all app data
+`,
+      "subprocessors.yml",
+    );
+    if ("fatal" in result) {
+      throw new Error(result.fatal.message);
+    }
+    expect(
+      result.findings.some(
+        (f) =>
+          f.path === "subprocessors[0].name" && f.code === "missing_required_field",
+      ),
+    ).toBe(true);
+  });
+
   it("validates shape lightly", () => {
     const result = parseSubprocessors(
       `schema_version: 1
