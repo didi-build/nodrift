@@ -53,6 +53,7 @@ Privacy inventory lives in **`docs/privacy/data-map.yml`** (grouped format, `sch
 | `parseSubprocessors(text, filePath)`                                                 | Light shape check for `subprocessors.yml`.                                                                                                                            |
 | `loadDataMapFile` / `loadSubprocessorsFile`                                          | Thin `readFileSync` wrappers around the parsers.                                                                                                                      |
 | `checkMapVsMigrations({ mapFilePath, migrationsDir, ignoreTables?, schemaReader? })` | Check 1 library: load the map, replay `*.sql` migrations in memory, compare `d1_tables` to the effective schema (no CLI wiring yet).                                  |
+| `checkDataStoresVsMap({ mapFilePath, wranglerDir })`                                 | Check 2 library: load the map, parse Wrangler JSONC/JSON in `wranglerDir`, compare in-scope data-store bindings to `other_items` `binding:` (no CLI wiring yet).      |
 
 **Exit mapping (for the CLI)**
 
@@ -129,6 +130,40 @@ Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` are argume
 **FTS5:** In D1/Wrangler, a virtual FTS table also creates **shadow tables** (for example `f_config`, `f_data`). Those names appear in `sqlite_master` and count as undeclared unless you list them in `ignoreTables`. Tested 2026-10-19 on Linux x64 with `npx -y node@<version>` and `CREATE VIRTUAL TABLE f USING fts5(x)` in an in-memory `node:sqlite` database: FTS5 unavailable on 22.13.0, 22.14.0, and 22.15.0; available from 22.16.0 (22.16 to 22.22 tested). Repos whose migrations use FTS5 need CI on Node 22.16+ or Check 1 returns a fatal on older Node; `engines.node` stays `>=22.13.0`. The test suite includes a real FTS5 migration test that **skips** when the module is unavailable (for example on Node 22.13–22.15).
 
 **Column discovery:** Check 1 uses `PRAGMA table_xinfo` (not `table_info`) so **generated** (virtual and stored) columns are included. Rows with `hidden = 1` (virtual-table internals) are skipped; `hidden` values `0`, `2`, and `3` are kept.
+
+## Check 2: data stores vs map
+
+Library entry point: `checkDataStoresVsMap` (`mapFilePath` and a directory containing the Wrangler config are arguments).
+
+**In-scope bindings** (union by binding name across all scanned sections):
+
+| Wrangler source              | Kind   |
+| ---------------------------- | ------ |
+| `d1_databases[].binding`     | D1     |
+| `r2_buckets[].binding`       | R2     |
+| `kv_namespaces[].binding`    | KV     |
+| `queues.producers[].binding` | queue  |
+| `images.binding`             | Images |
+
+**Sections scanned:** the top-level config, every `env.<name>` block, and `previews`. Queue **consumers** are not bindings.
+
+**Coverage rule:** each in-scope binding name must appear on at least one `other_items` entry’s `binding:` (a string or a list; one entry may cover several bindings). There is **no** stale-binding check in v1 — a typo in `binding:` leaves the real binding uncovered.
+
+**Config discovery** (in `wranglerDir`): `wrangler.jsonc`, then `wrangler.json`. If only `wrangler.toml` exists, Check 2 is a **fatal** (`wrangler.toml` is not supported in v1). If no Wrangler config exists, `outcome: "nothing_to_check"`. When both `.jsonc` and `.toml` exist, `.jsonc` wins. JSONC allows comments and trailing commas; syntax errors are **fatals** with line and column.
+
+**Out of scope for Check 2:** new outside vendors (that is a separate check), `services`, `assets`, `vars`, `ratelimits`, Durable Objects, routes, and other Wrangler bindings not listed above.
+
+**Single D1 database:** if any one section declares more than one `d1_databases` binding, Check 2 reports `multiple_d1_databases` (v1 replays one migrations directory for Check 1).
+
+**Outcomes** (same `kind` shape as Check 1):
+
+| `kind`     | CLI exit | Meaning                                                                                                                       |
+| ---------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `fatal`    | `2`      | Unreadable map, loader fatal, unsupported `wrangler.toml` only, unreadable config, or JSONC parse failure.                    |
+| `findings` | `1`      | Loader validation findings (comparison skipped), `binding_not_in_map`, or `multiple_d1_databases`.                            |
+| `ok`       | `0`      | `outcome: "checked"` with `bindingCount`, or `outcome: "nothing_to_check"` when there is no Wrangler config in `wranglerDir`. |
+
+**Example finding:** `binding_not_in_map` includes a ready-to-paste `other_items` snippet with suggested `id: <kind>.<binding-lowercase>`.
 
 ## Commands
 
