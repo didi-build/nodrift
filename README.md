@@ -126,7 +126,7 @@ Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` are argume
 
 **Ignored tables** (never compared): names starting with `sqlite_` or `_cf_`, the `d1_migrations` table, plus any name in `ignoreTables` (matched case-insensitively, like SQLite).
 
-**FTS5:** Node’s built-in SQLite does not load the FTS5 module. In D1/Wrangler, a virtual FTS table still creates shadow tables (for example `f_config`, `f_data`). Those names appear in `sqlite_master` and count as undeclared unless you list them in `ignoreTables`.
+**FTS5:** In D1/Wrangler, a virtual FTS table still creates shadow tables (for example `f_config`, `f_data`). Those names appear in `sqlite_master` and count as undeclared unless you list them in `ignoreTables`. Node’s built-in SQLite only loads the FTS5 module on some releases. Tested 2026-10-19 on Linux x64 with `npx -y node@<version>` and `CREATE VIRTUAL TABLE f USING fts5(x)` in an in-memory `node:sqlite` database: FTS5 unavailable on 22.13.0, 22.14.0, and 22.15.0; available from 22.16.0 (22.16 to 22.22 tested). Check 1’s FTS5 test uses shadow table **names** only so it runs on `engines.node` (`>=22.13.0`).
 
 **Column discovery:** Check 1 uses `PRAGMA table_xinfo` (not `table_info`) so **generated** (virtual and stored) columns are included. Rows with `hidden = 1` (virtual-table internals) are skipped; `hidden` values `0`, `2`, and `3` are kept.
 

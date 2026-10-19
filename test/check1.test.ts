@@ -387,6 +387,7 @@ other_items: []
     expect(result).toMatchObject({ kind: "ok", outcome: "checked" });
   });
 
+  // node:sqlite lacks fts5 below Node 22.16 (see README); shadow names match real D1 side tables.
   it("FTS5-style shadow table names appear as undeclared unless ignored", () => {
     const root = tempRoot();
     const { mapPath, migrationsDir } = writeFixture(root, {
