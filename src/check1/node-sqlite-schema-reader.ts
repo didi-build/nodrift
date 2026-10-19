@@ -6,22 +6,45 @@ import type { SchemaSnapshot } from "./types.js";
 
 type SqliteModule = typeof import("node:sqlite");
 
-function loadNodeSqlite(): SqliteModule {
+function warningTypeFromEmitArgs(args: unknown[]): string | undefined {
+  if (typeof args[0] === "string") {
+    return args[0];
+  }
+  if (args[0] && typeof args[0] === "object" && "type" in args[0]) {
+    const type = (args[0] as { type?: unknown }).type;
+    return typeof type === "string" ? type : undefined;
+  }
+  return undefined;
+}
+
+function shouldSuppressSqliteExperimentalWarning(
+  warning: string | Error,
+  args: unknown[],
+): boolean {
+  const type = warningTypeFromEmitArgs(args);
+  const message = typeof warning === "string" ? warning : warning.message;
+  return (
+    type === "ExperimentalWarning" &&
+    message.includes("SQLite is an experimental feature")
+  );
+}
+
+/** Loads `node:sqlite`, suppressing only its experimental warning during the load. */
+export function loadNodeSqlite(
+  loader: () => SqliteModule = () => {
+    const require = createRequire(import.meta.url);
+    return require("node:sqlite") as SqliteModule;
+  },
+): SqliteModule {
   const originalEmitWarning = process.emitWarning;
   process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
-    const type = typeof args[0] === "string" ? args[0] : undefined;
-    const message = typeof warning === "string" ? warning : warning.message;
-    if (
-      type === "ExperimentalWarning" &&
-      message.includes("SQLite is an experimental feature")
-    ) {
+    if (shouldSuppressSqliteExperimentalWarning(warning, args)) {
       return;
     }
     return originalEmitWarning(warning, ...(args as []));
   }) as typeof process.emitWarning;
   try {
-    const require = createRequire(import.meta.url);
-    return require("node:sqlite") as SqliteModule;
+    return loader();
   } finally {
     process.emitWarning = originalEmitWarning;
   }

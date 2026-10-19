@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { compareSchemaToMap } from "../src/check1/compare.js";
 import { checkMapVsMigrations } from "../src/check1/check-map-vs-migrations.js";
 import { discoverMigrationFiles } from "../src/check1/discover-migrations.js";
-import { createNodeSqliteSchemaReader } from "../src/check1/node-sqlite-schema-reader.js";
+import {
+  createNodeSqliteSchemaReader,
+  loadNodeSqlite,
+} from "../src/check1/node-sqlite-schema-reader.js";
 import type { SchemaReader, SchemaSnapshot } from "../src/check1/types.js";
 import { parseDataMap } from "../src/data-map/parse.js";
 
@@ -192,8 +195,14 @@ other_items: []
     writeFileSync(join(migrationsDir, "010_second.sql"), "-- b");
     writeFileSync(join(migrationsDir, "002_first.sql"), "-- a");
     writeFileSync(join(migrationsDir, "readme.txt"), "skip");
-    const files = discoverMigrationFiles(migrationsDir);
-    expect(files.map((f) => f.fileName)).toEqual(["002_first.sql", "010_second.sql"]);
+    const discovered = discoverMigrationFiles(migrationsDir);
+    expect(discovered.ok).toBe(true);
+    if (discovered.ok) {
+      expect(discovered.migrations.map((f) => f.fileName)).toEqual([
+        "002_first.sql",
+        "010_second.sql",
+      ]);
+    }
   });
 
   it("suggests {} for undeclared column on operational table", () => {
@@ -498,6 +507,186 @@ ALTER TABLE t_new RENAME TO t;
     );
   });
 
+  it("fatal when a migrations entry is a directory named x.sql", () => {
+    const root = tempRoot();
+    const { mapPath, migrationsDir } = writeFixture(root, {
+      map: "schema_version: 1\n",
+      migrations: {},
+    });
+    mkdirSync(join(migrationsDir, "x.sql"));
+    const result = checkMapVsMigrations({ mapFilePath: mapPath, migrationsDir });
+    expect(result.kind).toBe("fatal");
+    if (result.kind === "fatal") {
+      expect(result.fatal.message).toMatch(/cannot read migration `x\.sql`/);
+      expect(result.fatal.message).toMatch(/EISDIR/i);
+    }
+  });
+
+  it("fatal on EACCES reading migrations directory (not nothing_to_check)", () => {
+    const root = tempRoot();
+    const { mapPath, migrationsDir } = writeFixture(root, {
+      map: "schema_version: 1\n",
+    });
+    const eacces = new Error("EACCES: permission denied") as NodeJS.ErrnoException;
+    eacces.code = "EACCES";
+    const result = checkMapVsMigrations({
+      mapFilePath: mapPath,
+      migrationsDir,
+      migrationFs: {
+        readdirSync() {
+          throw eacces;
+        },
+        readFileSync() {
+          return "";
+        },
+      },
+    });
+    expect(result.kind).toBe("fatal");
+    if (result.kind === "fatal") {
+      expect(result.fatal.message).toContain("cannot read migrations directory");
+      expect(result.fatal.message).toMatch(/EACCES/i);
+    }
+    expect(result).not.toMatchObject({ kind: "ok", outcome: "nothing_to_check" });
+  });
+
+  it("fatal on readFileSync failure for a migration file", () => {
+    const root = tempRoot();
+    const { mapPath, migrationsDir } = writeFixture(root, {
+      map: operationalTableMap,
+      migrations: { "001.sql": "CREATE TABLE items (id TEXT);" },
+    });
+    const eacces = new Error("EACCES: permission denied") as NodeJS.ErrnoException;
+    eacces.code = "EACCES";
+    const result = checkMapVsMigrations({
+      mapFilePath: mapPath,
+      migrationsDir,
+      migrationFs: {
+        readdirSync() {
+          return ["001.sql"];
+        },
+        readFileSync() {
+          throw eacces;
+        },
+      },
+    });
+    expect(result.kind).toBe("fatal");
+    if (result.kind === "fatal") {
+      expect(result.fatal.message).toMatch(/cannot read migration `001\.sql`/);
+    }
+  });
+
+  it("treats ENOENT migrations path as missing (nothing_to_check with empty map)", () => {
+    const root = tempRoot();
+    const mapPath = join(root, "data-map.yml");
+    writeFileSync(mapPath, "schema_version: 1\n", "utf8");
+    const missingDir = join(root, "no-such-migrations");
+    expect(
+      checkMapVsMigrations({ mapFilePath: mapPath, migrationsDir: missingDir }),
+    ).toEqual({
+      kind: "ok",
+      outcome: "nothing_to_check",
+      tableCount: 0,
+      columnCount: 0,
+    });
+  });
+
+  it("treats migrations path that is a regular file as missing", () => {
+    const root = tempRoot();
+    const mapPath = join(root, "data-map.yml");
+    writeFileSync(mapPath, "schema_version: 1\n", "utf8");
+    const filePath = join(root, "not-a-dir");
+    writeFileSync(filePath, "x", "utf8");
+    expect(
+      checkMapVsMigrations({ mapFilePath: mapPath, migrationsDir: filePath }),
+    ).toEqual({
+      kind: "ok",
+      outcome: "nothing_to_check",
+      tableCount: 0,
+      columnCount: 0,
+    });
+  });
+
+  it("appends FTS5 module hint when migration fails with no such module", () => {
+    const root = tempRoot();
+    const { mapPath, migrationsDir } = writeFixture(root, {
+      map: operationalTableMap,
+      migrations: { "001.sql": "--" },
+    });
+    const fake: SchemaReader = {
+      replayMigrations() {
+        return {
+          ok: false,
+          migrationFile: "001.sql",
+          sqlError: "no such module: fts5",
+        };
+      },
+    };
+    const result = checkMapVsMigrations({
+      mapFilePath: mapPath,
+      migrationsDir,
+      schemaReader: fake,
+    });
+    expect(result.kind).toBe("fatal");
+    if (result.kind === "fatal") {
+      expect(result.fatal.message).toContain("no such module: fts5");
+      expect(result.fatal.message).toContain("FTS5 requires Node 22.16 or newer");
+    }
+  });
+
+  it("reports ignoreTables when map declares an excluded table", () => {
+    const root = tempRoot();
+    const yaml = `schema_version: 1
+d1_tables:
+  items:
+    defaults:
+      whose: operational
+      data: x
+      purpose: y
+      processors: []
+      retention: r
+    columns:
+      id: {}
+  fts_shadow:
+    defaults:
+      whose: operational
+      data: x
+      purpose: y
+      processors: []
+      retention: r
+    columns:
+      x: {}
+other_items: []
+`;
+    const { mapPath, migrationsDir } = writeFixture(root, {
+      map: yaml,
+      migrations: {
+        "001.sql": "CREATE TABLE items (id TEXT PRIMARY KEY);",
+      },
+    });
+    const result = checkMapVsMigrations({
+      mapFilePath: mapPath,
+      migrationsDir,
+      ignoreTables: ["fts_shadow"],
+    });
+    expect(result.kind).toBe("findings");
+    if (result.kind !== "findings") {
+      return;
+    }
+    const tableFinding = result.findings.find((f) => f.code === "table_not_in_schema");
+    expect(tableFinding?.message).toContain("excluded by `ignoreTables`");
+    expect(tableFinding?.fix).toContain("ignoreTables");
+  });
+
+  it("orders findings by structured table and column keys (dotted table names)", () => {
+    const map = parseMap("schema_version: 1\nother_items: []\n");
+    const schema: SchemaSnapshot = new Map([
+      ["z.z", ["a"]],
+      ["z", ["b"]],
+    ]);
+    const findings = compareSchemaToMap(schema, map, "m.yml");
+    expect(findings.map((f) => f.path)).toEqual(["d1_tables.z", "d1_tables.z.z"]);
+  });
+
   it("uses injected fake schema reader", () => {
     const root = tempRoot();
     const { mapPath, migrationsDir } = writeFixture(root, {
@@ -536,21 +725,99 @@ describe("node:sqlite warning filter", () => {
       return original(warning, ...(args as []));
     }) as typeof process.emitWarning;
 
-    createNodeSqliteSchemaReader();
-    process.emitWarning("other warning");
-    process.emitWarning = original;
+    loadNodeSqlite(() => {
+      process.emitWarning(
+        "SQLite is an experimental feature and might change at any time",
+        "ExperimentalWarning",
+      );
+      process.emitWarning("other warning");
+      process.emitWarning(
+        "SQLite is an experimental feature and might change at any time",
+        {
+          type: "ExperimentalWarning",
+        },
+      );
+      return {} as ReturnType<typeof loadNodeSqlite>;
+    });
 
     expect(seen).toEqual(["other warning"]);
-    expect(seen.some((m) => m.includes("SQLite is an experimental feature"))).toBe(
-      false,
-    );
+    process.emitWarning = original;
   });
+
+  it("restores process.emitWarning when the loader throws", () => {
+    const original = process.emitWarning;
+    expect(() =>
+      loadNodeSqlite(() => {
+        process.emitWarning(
+          "SQLite is an experimental feature and might change at any time",
+          "ExperimentalWarning",
+        );
+        throw new Error("load failed");
+      }),
+    ).toThrow("load failed");
+    expect(process.emitWarning).toBe(original);
+  });
+});
+
+describe("FTS5 when available", () => {
+  const probeReader = createNodeSqliteSchemaReader();
+  const fts5Works =
+    probeReader.replayMigrations(
+      [
+        {
+          fileName: "probe.sql",
+          filePath: "probe.sql",
+          sql: "CREATE VIRTUAL TABLE fts_probe USING fts5(x);",
+        },
+      ],
+      [],
+    ).ok === true;
+
+  it.skipIf(!fts5Works)(
+    "shadow tables are undeclared unless ignored; hidden columns skipped",
+    () => {
+      const root = tempRoot();
+      const { mapPath, migrationsDir } = writeFixture(root, {
+        map: operationalTableMap,
+        migrations: {
+          "001.sql": "CREATE VIRTUAL TABLE docs USING fts5(title, body);",
+        },
+      });
+      const without = checkMapVsMigrations({ mapFilePath: mapPath, migrationsDir });
+      expect(without.kind).toBe("findings");
+      if (without.kind !== "findings") {
+        return;
+      }
+      const tableFindings = without.findings.filter(
+        (f) => f.code === "table_not_in_map",
+      );
+      expect(tableFindings.some((f) => f.path === "d1_tables.docs_config")).toBe(true);
+      expect(tableFindings.some((f) => f.path === "d1_tables.docs_data")).toBe(true);
+      expect(tableFindings.some((f) => f.path === "d1_tables.docs")).toBe(false);
+
+      const withIgnore = checkMapVsMigrations({
+        mapFilePath: mapPath,
+        migrationsDir,
+        ignoreTables: [
+          "docs_config",
+          "docs_data",
+          "docs_idx",
+          "docs_content",
+          "docs_docsize",
+        ],
+      });
+      expect(withIgnore.kind).toBe("ok");
+    },
+  );
 });
 
 describe("discoverMigrationFiles", () => {
   it("reads we-met migration files from fixture", () => {
-    const files = discoverMigrationFiles(join(weMetDir, "migrations"));
-    expect(files.length).toBe(6);
-    expect(files[0].fileName).toBe("0001_card_lookup_schema.sql");
+    const discovered = discoverMigrationFiles(join(weMetDir, "migrations"));
+    expect(discovered.ok).toBe(true);
+    if (discovered.ok) {
+      expect(discovered.migrations.length).toBe(6);
+      expect(discovered.migrations[0].fileName).toBe("0001_card_lookup_schema.sql");
+    }
   });
 });

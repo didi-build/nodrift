@@ -1,5 +1,6 @@
 import type { DataMap, D1Table } from "../data-map/types.js";
 import { finding, type Finding } from "../findings.js";
+import { isIgnoredTable } from "./schema-filter.js";
 import type { SchemaSnapshot } from "./types.js";
 
 function compareCodeUnits(a: string, b: string): number {
@@ -64,6 +65,12 @@ function countSchema(snapshot: SchemaSnapshot): {
 
 export { countSchema };
 
+type PendingFinding = {
+  sortTable: string;
+  sortColumn: string;
+  finding: Finding;
+};
+
 /**
  * Pure comparison of an effective schema snapshot to declared `d1_tables` entries.
  */
@@ -71,8 +78,9 @@ export function compareSchemaToMap(
   schema: SchemaSnapshot,
   map: DataMap,
   mapFile: string,
+  ignoreTables: readonly string[] = [],
 ): Finding[] {
-  const findings: Finding[] = [];
+  const pending: PendingFinding[] = [];
   const mapTables = map.d1_tables;
 
   const schemaTableNames = [...schema.keys()].sort(compareCodeUnits);
@@ -83,15 +91,17 @@ export function compareSchemaToMap(
     if (!mapTable) {
       const mapTableNames = Object.keys(mapTables);
       const hint = caseHint(tableName, caseOnlyCounterpart(tableName, mapTableNames));
-      findings.push(
-        finding(
+      pending.push({
+        sortTable: tableName,
+        sortColumn: "",
+        finding: finding(
           mapFile,
           `d1_tables.${tableName}`,
           "table_not_in_map",
           `table \`${tableName}\` exists in the schema (${schemaColumns.length} column(s)) but is not declared in the map${hint}`,
           `add to d1_tables:\n${tableAddSnippet(tableName, schemaColumns)}`,
         ),
-      );
+      });
       continue;
     }
 
@@ -104,15 +114,17 @@ export function compareSchemaToMap(
         continue;
       }
       const hint = caseHint(column, caseOnlyCounterpart(column, mapColumnNames));
-      findings.push(
-        finding(
+      pending.push({
+        sortTable: tableName,
+        sortColumn: column,
+        finding: finding(
           mapFile,
           `d1_tables.${tableName}.columns.${column}`,
           "column_not_in_map",
           `column \`${column}\` on table \`${tableName}\` exists in the schema but is not declared in the map${hint}`,
           `add under d1_tables.${tableName}.columns:\n      ${columnAddSnippet(column, mapTable)}`,
         ),
-      );
+      });
     }
   }
 
@@ -126,15 +138,31 @@ export function compareSchemaToMap(
         tableName,
         caseOnlyCounterpart(tableName, schemaTableNames),
       );
-      findings.push(
-        finding(
-          mapFile,
-          `d1_tables.${tableName}`,
-          "table_not_in_schema",
-          `table \`${tableName}\` is declared in the map (${mapColumns.length} column(s)) but does not exist in the schema${hint}`,
-          `remove d1_tables.${tableName} or add a migration that creates it`,
-        ),
-      );
+      if (isIgnoredTable(tableName, ignoreTables)) {
+        pending.push({
+          sortTable: tableName,
+          sortColumn: "",
+          finding: finding(
+            mapFile,
+            `d1_tables.${tableName}`,
+            "table_not_in_schema",
+            `table \`${tableName}\` is declared in the map (${mapColumns.length} column(s)) but is excluded by \`ignoreTables\` (remove it from the map or from \`ignoreTables\`)${hint}`,
+            `remove d1_tables.${tableName} or remove it from ignoreTables`,
+          ),
+        });
+      } else {
+        pending.push({
+          sortTable: tableName,
+          sortColumn: "",
+          finding: finding(
+            mapFile,
+            `d1_tables.${tableName}`,
+            "table_not_in_schema",
+            `table \`${tableName}\` is declared in the map (${mapColumns.length} column(s)) but does not exist in the schema${hint}`,
+            `remove d1_tables.${tableName} or add a migration that creates it`,
+          ),
+        });
+      }
       continue;
     }
 
@@ -145,33 +173,27 @@ export function compareSchemaToMap(
       }
       const schemaCols = schema.get(tableName) ?? [];
       const hint = caseHint(column, caseOnlyCounterpart(column, schemaCols));
-      findings.push(
-        finding(
+      pending.push({
+        sortTable: tableName,
+        sortColumn: column,
+        finding: finding(
           mapFile,
           `d1_tables.${tableName}.columns.${column}`,
           "column_not_in_schema",
           `column \`${column}\` on table \`${tableName}\` is declared in the map but does not exist in the schema${hint}`,
           `remove d1_tables.${tableName}.columns.${column} or add a migration for it`,
         ),
-      );
+      });
     }
   }
 
-  findings.sort((a, b) => {
-    const tableA = a.path.split(".")[1] ?? "";
-    const tableB = b.path.split(".")[1] ?? "";
-    const byTable = compareCodeUnits(tableA, tableB);
+  pending.sort((a, b) => {
+    const byTable = compareCodeUnits(a.sortTable, b.sortTable);
     if (byTable !== 0) {
       return byTable;
     }
-    const colA = a.path.includes(".columns.")
-      ? (a.path.split(".columns.")[1] ?? "")
-      : "";
-    const colB = b.path.includes(".columns.")
-      ? (b.path.split(".columns.")[1] ?? "")
-      : "";
-    return compareCodeUnits(colA, colB);
+    return compareCodeUnits(a.sortColumn, b.sortColumn);
   });
 
-  return findings;
+  return pending.map((entry) => entry.finding);
 }
