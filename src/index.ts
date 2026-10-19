@@ -16,6 +16,9 @@ export type {
   SchemaReader,
   SchemaSnapshot,
 } from "./check1/types.js";
+export { checkDataStoresVsMap } from "./check2/check-data-stores-vs-map.js";
+export type { CheckDataStoresVsMapOptions } from "./check2/check-data-stores-vs-map.js";
+export type { CheckDataStoresVsMapResult } from "./check2/types.js";
 export { loadDataMapFile, loadSubprocessorsFile, readTextFile } from "./load.js";
 export { parseSubprocessors } from "./subprocessors/parse.js";
 export type {

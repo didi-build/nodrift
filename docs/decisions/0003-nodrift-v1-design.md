@@ -441,6 +441,10 @@ Approved by the maintainer on **2026-10-19** (recorded here for implementers; th
 2. **Failed migration** — If a migration **fails to apply**, Check 1 is a **`fatal`** (CLI exit `2`), not a finding.
 3. **Missing migrations** — If the map declares **any D1 table** but there are **no** `*.sql` migration files (or the migrations directory is missing), Check 1 is a **`fatal`**. **`nothing_to_check`** applies only when **both** the map has no D1 tables **and** there are no migrations to replay.
 4. **Known limitation (FTS5 on older Node)** — Migrations that create FTS5 virtual tables require **Node 22.16 or newer** for in-memory replay with `node:sqlite`. On **22.13 through 22.15**, replay fails with `no such module: fts5`. `engines.node` remains `>=22.13.0`; consumers with FTS5 migrations should run Check 1 on Node 22.16+.
+5. **Check 2 section scan** — Parse the **top level**, every **`env.<name>`** block, and **`previews`**, taking the **union by binding name** (case-sensitive); each binding remembers every section that declares it.
+6. **Check 2 `multiple_d1_databases`** — More than one `d1_databases` entry in a **single** Wrangler section is a **`multiple_d1_databases`** finding (v1 supports one D1 database per section for Check 1 alignment).
+7. **Check 2 Wrangler file presence** — **`wrangler.toml` only** is a **fatal**; **no** Wrangler JSON/JSONC file is **`nothing_to_check`** (not a finding).
+8. **Check 2 stale bindings** — **No** reverse check in v1 (map `binding:` values with no Wrangler counterpart do not fail Check 2).
 
 ---
 

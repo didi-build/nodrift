@@ -46,13 +46,14 @@ Privacy inventory lives in **`docs/privacy/data-map.yml`** (grouped format, `sch
 
 **Loader API** (`src/`)
 
-| Function                                                                             | Role                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `parseDataMap(text, filePath)`                                                       | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                         |
-| `expandDataMap(map)`                                                                 | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing. |
-| `parseSubprocessors(text, filePath)`                                                 | Light shape check for `subprocessors.yml`.                                                                                                                            |
-| `loadDataMapFile` / `loadSubprocessorsFile`                                          | Thin `readFileSync` wrappers around the parsers.                                                                                                                      |
-| `checkMapVsMigrations({ mapFilePath, migrationsDir, ignoreTables?, schemaReader? })` | Check 1 library: load the map, replay `*.sql` migrations in memory, compare `d1_tables` to the effective schema (no CLI wiring yet).                                  |
+| Function                                                                             | Role                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseDataMap(text, filePath)`                                                       | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                             |
+| `expandDataMap(map)`                                                                 | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing.     |
+| `parseSubprocessors(text, filePath)`                                                 | Light shape check for `subprocessors.yml`.                                                                                                                                |
+| `loadDataMapFile` / `loadSubprocessorsFile`                                          | Thin `readFileSync` wrappers around the parsers.                                                                                                                          |
+| `checkMapVsMigrations({ mapFilePath, migrationsDir, ignoreTables?, schemaReader? })` | Check 1 library: load the map, replay `*.sql` migrations in memory, compare `d1_tables` to the effective schema (no CLI wiring yet).                                      |
+| `checkDataStoresVsMap({ mapFilePath, wranglerDir })`                                 | Check 2 library: parse Wrangler JSON/JSONC in `wranglerDir`, collect in-scope data-store bindings, and verify each is listed on an `other_items` `binding:` (no CLI yet). |
 
 **Exit mapping (for the CLI)**
 
@@ -129,6 +130,51 @@ Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` are argume
 **FTS5:** In D1/Wrangler, a virtual FTS table also creates **shadow tables** (for example `f_config`, `f_data`). Those names appear in `sqlite_master` and count as undeclared unless you list them in `ignoreTables`. Tested 2026-10-19 on Linux x64 with `npx -y node@<version>` and `CREATE VIRTUAL TABLE f USING fts5(x)` in an in-memory `node:sqlite` database: FTS5 unavailable on 22.13.0, 22.14.0, and 22.15.0; available from 22.16.0 (22.16 to 22.22 tested). Repos whose migrations use FTS5 need CI on Node 22.16+ or Check 1 returns a fatal on older Node; `engines.node` stays `>=22.13.0`. The test suite includes a real FTS5 migration test that **skips** when the module is unavailable (for example on Node 22.13–22.15).
 
 **Column discovery:** Check 1 uses `PRAGMA table_xinfo` (not `table_info`) so **generated** (virtual and stored) columns are included. Rows with `hidden = 1` (virtual-table internals) are skipped; `hidden` values `0`, `2`, and `3` are kept.
+
+## Check 2: data stores vs map
+
+Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` are arguments; config-file defaults arrive with the CLI ticket).
+
+**In-scope Wrangler bindings** (each must appear on at least one `other_items` entry’s **`binding:`** — string or list; one row may cover several names):
+
+| Kind   | Wrangler path                                             |
+| ------ | --------------------------------------------------------- |
+| D1     | `d1_databases[].binding`                                  |
+| R2     | `r2_buckets[].binding`                                    |
+| KV     | `kv_namespaces[].binding`                                 |
+| Queue  | `queues.producers[].binding` (consumers are not bindings) |
+| Images | `images.binding`                                          |
+
+**Sections scanned:** the top-level config, every `env.<name>` block, and `previews`. The same binding name in multiple sections is merged (one finding lists every section, for example `top level and previews`).
+
+**Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, Durable Objects, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config.
+
+**Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`). **No config file** → `ok` with `outcome: "nothing_to_check"`. JSONC allows comments and trailing commas; parse errors are **fatals** with line and column.
+
+**Single D1 database:** more than one `d1_databases` entry in the same section yields `multiple_d1_databases` (v1 replays one migrations directory in Check 1).
+
+**No stale-binding check in v1** — a typo in `binding:` leaves the real Wrangler binding uncovered.
+
+**Outcomes** (same `kind` / `outcome` shape as Check 1):
+
+| `kind`     | CLI exit | Meaning                                                                                                      |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `fatal`    | `2`      | Unreadable map, loader fatal, unreadable Wrangler dir, TOML-only config, or invalid/empty Wrangler JSON.     |
+| `findings` | `1`      | Loader validation findings (comparison skipped), `binding_not_in_map`, or `multiple_d1_databases`.           |
+| `ok`       | `0`      | `outcome: "checked"` with `bindingCount`, or `outcome: "nothing_to_check"` when there is no Wrangler config. |
+
+**Example fix** (`binding_not_in_map`):
+
+```yaml
+other_items:
+  - id: d1.we_met_db
+    binding: WE_MET_DB
+    whose: TODO
+    data: TODO
+    purpose: TODO
+    processors: [Cloudflare]
+    retention: TODO
+```
 
 ## Commands
 
