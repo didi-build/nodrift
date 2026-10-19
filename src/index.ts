@@ -9,6 +9,13 @@ export type {
   ParseDataMapResult,
   Sourced,
 } from "./data-map/types.js";
+export { checkMapVsMigrations } from "./check1/check-map-vs-migrations.js";
+export type { CheckMapVsMigrationsOptions } from "./check1/check-map-vs-migrations.js";
+export type {
+  CheckMapVsMigrationsResult,
+  SchemaReader,
+  SchemaSnapshot,
+} from "./check1/types.js";
 export { loadDataMapFile, loadSubprocessorsFile, readTextFile } from "./load.js";
 export { parseSubprocessors } from "./subprocessors/parse.js";
 export type {

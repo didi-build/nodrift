@@ -433,6 +433,16 @@ These are **not** locked in [DIDI-659](https://linear.app/didi-build/issue/DIDI-
 
 ---
 
+## Amendments
+
+Approved by the maintainer on **2026-10-19** (recorded here for implementers; the locked §3 text above is unchanged until a follow-up ADR edit):
+
+1. **Check 1 column discovery** — Read columns with **`PRAGMA table_xinfo`** instead of **`PRAGMA table_info`**, so generated (virtual and stored) columns are included in the comparison.
+2. **Failed migration** — If a migration **fails to apply**, Check 1 is a **`fatal`** (CLI exit `2`), not a finding.
+3. **Missing migrations** — If the map declares **any D1 table** but there are **no** `*.sql` migration files (or the migrations directory is missing), Check 1 is a **`fatal`**. **`nothing_to_check`** applies only when **both** the map has no D1 tables **and** there are no migrations to replay.
+
+---
+
 ## Consequences
 
 - Implementation tickets can land `check` and `init` in any order once this ADR is merged to `main`; **no production code before that merge** (see `AGENTS.md`).
