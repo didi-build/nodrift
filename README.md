@@ -46,12 +46,13 @@ Privacy inventory lives in **`docs/privacy/data-map.yml`** (grouped format, `sch
 
 **Loader API** (`src/`)
 
-| Function                                    | Role                                                                                                                                                                  |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `parseDataMap(text, filePath)`              | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                         |
-| `expandDataMap(map)`                        | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing. |
-| `parseSubprocessors(text, filePath)`        | Light shape check for `subprocessors.yml`.                                                                                                                            |
-| `loadDataMapFile` / `loadSubprocessorsFile` | Thin `readFileSync` wrappers around the parsers.                                                                                                                      |
+| Function                                                                             | Role                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseDataMap(text, filePath)`                                                       | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                         |
+| `expandDataMap(map)`                                                                 | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing. |
+| `parseSubprocessors(text, filePath)`                                                 | Light shape check for `subprocessors.yml`.                                                                                                                            |
+| `loadDataMapFile` / `loadSubprocessorsFile`                                          | Thin `readFileSync` wrappers around the parsers.                                                                                                                      |
+| `checkMapVsMigrations({ mapFilePath, migrationsDir, ignoreTables?, schemaReader? })` | Check 1 library: load the map, replay `*.sql` migrations in memory, compare `d1_tables` to the effective schema (no CLI wiring yet).                                  |
 
 **Exit mapping (for the CLI)**
 
@@ -103,6 +104,31 @@ other_items:
     retention: until queue consumer deletes message
     verified: true
 ```
+
+## Check 1: map vs migrations
+
+Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` are arguments; config-file defaults arrive with the CLI ticket).
+
+**Outcomes** (discriminated union on `kind`):
+
+| `kind`     | CLI exit | Meaning                                                                                                                                                           |
+| ---------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fatal`    | `2`      | Unreadable map, loader fatal, missing migrations while the map declares D1 tables, or a migration that fails to apply.                                            |
+| `findings` | `1`      | Loader validation findings (comparison is skipped), or schema/map drift (`column_not_in_map`, `table_not_in_map`, `column_not_in_schema`, `table_not_in_schema`). |
+| `ok`       | `0`      | `outcome: "checked"` with `tableCount` / `columnCount`, or `outcome: "nothing_to_check"` when the map has no D1 tables and there are no `.sql` migrations.        |
+
+**Example messages**
+
+- Fatal (no migrations): `no migrations found at \`migrations/\` but the map declares D1 tables; check the \`migrations\` path`
+- Fatal (bad migration): `migration \`002_bad.sql\` failed: <SQL error>`
+- Finding (undeclared column on an operational table): fix suggests `extra: {}` under `d1_tables.<table>.columns`
+- Finding (undeclared column on a personal-data table): fix suggests `extra: { whose: TODO }`
+
+**Ignored tables** (never compared): names starting with `sqlite_` or `_cf_`, the `d1_migrations` table, plus any name in `ignoreTables` (matched case-insensitively, like SQLite).
+
+**FTS5:** In D1/Wrangler, a virtual FTS table also creates **shadow tables** (for example `f_config`, `f_data`). Those names appear in `sqlite_master` and count as undeclared unless you list them in `ignoreTables`. Tested 2026-10-19 on Linux x64 with `npx -y node@<version>` and `CREATE VIRTUAL TABLE f USING fts5(x)` in an in-memory `node:sqlite` database: FTS5 unavailable on 22.13.0, 22.14.0, and 22.15.0; available from 22.16.0 (22.16 to 22.22 tested). Repos whose migrations use FTS5 need CI on Node 22.16+ or Check 1 returns a fatal on older Node; `engines.node` stays `>=22.13.0`. The test suite includes a real FTS5 migration test that **skips** when the module is unavailable (for example on Node 22.13–22.15).
+
+**Column discovery:** Check 1 uses `PRAGMA table_xinfo` (not `table_info`) so **generated** (virtual and stored) columns are included. Rows with `hidden = 1` (virtual-table internals) are skipped; `hidden` values `0`, `2`, and `3` are kept.
 
 ## Commands
 
