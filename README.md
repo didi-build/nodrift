@@ -126,11 +126,7 @@ Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` are argume
 
 **Ignored tables** (never compared): names starting with `sqlite_` or `_cf_`, the `d1_migrations` table, plus any name in `ignoreTables` (matched case-insensitively, like SQLite).
 
-<<<<<<< HEAD
-**FTS5:** In D1/Wrangler, a virtual FTS table still creates shadow tables (for example `f_config`, `f_data`). Those names appear in `sqlite_master` and count as undeclared unless you list them in `ignoreTables`. Node’s built-in SQLite only loads the FTS5 module on some releases. Tested 2026-10-19 on Linux x64 with `npx -y node@<version>` and `CREATE VIRTUAL TABLE f USING fts5(x)` in an in-memory `node:sqlite` database: FTS5 unavailable on 22.13.0, 22.14.0, and 22.15.0; available from 22.16.0 (22.16 to 22.22 tested). Check 1’s FTS5 test uses shadow table **names** only so it runs on `engines.node` (`>=22.13.0`).
-=======
-**FTS5:** On Node **22.13 through 22.15**, built-in SQLite cannot load FTS5 (`no such module: fts5` when a migration creates a virtual FTS table). **From Node 22.16 onward**, FTS5 replay works. Nodrift still supports `engines.node` `>=22.13.0`; repos whose migrations use FTS5 need CI on 22.16+ or will get a fatal on older Node. In D1/Wrangler, a virtual FTS table also creates **shadow tables** (for example `f_config`, `f_data`). Those names appear in `sqlite_master` and count as undeclared unless you list them in `ignoreTables`.
->>>>>>> c20e603 (fix(check1): address PR review on migration reads, FTS5, warnings)
+**FTS5:** In D1/Wrangler, a virtual FTS table also creates **shadow tables** (for example `f_config`, `f_data`). Those names appear in `sqlite_master` and count as undeclared unless you list them in `ignoreTables`. Tested 2026-10-19 on Linux x64 with `npx -y node@<version>` and `CREATE VIRTUAL TABLE f USING fts5(x)` in an in-memory `node:sqlite` database: FTS5 unavailable on 22.13.0, 22.14.0, and 22.15.0; available from 22.16.0 (22.16 to 22.22 tested). Repos whose migrations use FTS5 need CI on Node 22.16+ or Check 1 returns a fatal on older Node; `engines.node` stays `>=22.13.0`. The test suite includes a real FTS5 migration test that **skips** when the module is unavailable (for example on Node 22.13–22.15).
 
 **Column discovery:** Check 1 uses `PRAGMA table_xinfo` (not `table_info`) so **generated** (virtual and stored) columns are included. Rows with `hidden = 1` (virtual-table internals) are skipped; `hidden` values `0`, `2`, and `3` are kept.
 

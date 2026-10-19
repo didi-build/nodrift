@@ -5,10 +5,7 @@ export function normalizeTableName(name: string): string {
   return name.toLowerCase();
 }
 
-export function isIgnoredTable(
-  tableName: string,
-  ignoreTables: readonly string[],
-): boolean {
+export function isBuiltInIgnoredTable(tableName: string): boolean {
   const normalized = normalizeTableName(tableName);
   if (BUILTIN_IGNORE_TABLES.has(normalized)) {
     return true;
@@ -18,12 +15,29 @@ export function isIgnoredTable(
       return true;
     }
   }
+  return false;
+}
+
+export function isUserIgnoredTable(
+  tableName: string,
+  ignoreTables: readonly string[],
+): boolean {
+  const normalized = normalizeTableName(tableName);
   for (const ignored of ignoreTables) {
     if (normalizeTableName(ignored) === normalized) {
       return true;
     }
   }
   return false;
+}
+
+export function isIgnoredTable(
+  tableName: string,
+  ignoreTables: readonly string[],
+): boolean {
+  return (
+    isBuiltInIgnoredTable(tableName) || isUserIgnoredTable(tableName, ignoreTables)
+  );
 }
 
 /** `hidden` values to keep from `PRAGMA table_xinfo` (normal and generated columns). */

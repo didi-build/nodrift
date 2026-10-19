@@ -29,6 +29,21 @@ d1_tables:
 other_items: []
 `;
 
+const docsFtsTableMap = `schema_version: 1
+d1_tables:
+  docs:
+    defaults:
+      whose: operational
+      data: x
+      purpose: y
+      processors: []
+      retention: r
+    columns:
+      title: {}
+      body: {}
+other_items: []
+`;
+
 const mixedTableMap = `schema_version: 1
 d1_tables:
   people:
@@ -633,6 +648,81 @@ ALTER TABLE t_new RENAME TO t;
     }
   });
 
+  it("appends generic module hint for non-FTS5 missing SQLite modules", () => {
+    const root = tempRoot();
+    const { mapPath, migrationsDir } = writeFixture(root, {
+      map: operationalTableMap,
+      migrations: { "001.sql": "--" },
+    });
+    const fake: SchemaReader = {
+      replayMigrations() {
+        return {
+          ok: false,
+          migrationFile: "001.sql",
+          sqlError: "no such module: rtree",
+        };
+      },
+    };
+    const result = checkMapVsMigrations({
+      mapFilePath: mapPath,
+      migrationsDir,
+      schemaReader: fake,
+    });
+    expect(result.kind).toBe("fatal");
+    if (result.kind === "fatal") {
+      expect(result.fatal.message).toContain("no such module: rtree");
+      expect(result.fatal.message).toContain(
+        "this Node's built-in SQLite does not include the `rtree` module",
+      );
+      expect(result.fatal.message).not.toContain("FTS5 requires");
+    }
+  });
+
+  it("reports built-in ignored table when map declares d1_migrations", () => {
+    const root = tempRoot();
+    const yaml = `schema_version: 1
+d1_tables:
+  items:
+    defaults:
+      whose: operational
+      data: x
+      purpose: y
+      processors: []
+      retention: r
+    columns:
+      id: {}
+  d1_migrations:
+    defaults:
+      whose: operational
+      data: x
+      purpose: y
+      processors: []
+      retention: r
+    columns:
+      id: {}
+other_items: []
+`;
+    const { mapPath, migrationsDir } = writeFixture(root, {
+      map: yaml,
+      migrations: {
+        "001.sql": "CREATE TABLE items (id TEXT PRIMARY KEY);",
+      },
+    });
+    const result = checkMapVsMigrations({
+      mapFilePath: mapPath,
+      migrationsDir,
+    });
+    expect(result.kind).toBe("findings");
+    if (result.kind !== "findings") {
+      return;
+    }
+    const tableFinding = result.findings.find((f) => f.code === "table_not_in_schema");
+    expect(tableFinding?.path).toBe("d1_tables.d1_migrations");
+    expect(tableFinding?.message).toContain("built-in ignored table");
+    expect(tableFinding?.message).toContain("remove it from the map");
+    expect(tableFinding?.message).not.toContain("excluded by `ignoreTables`");
+  });
+
   it("reports ignoreTables when map declares an excluded table", () => {
     const root = tempRoot();
     const yaml = `schema_version: 1
@@ -778,11 +868,19 @@ describe("FTS5 when available", () => {
     () => {
       const root = tempRoot();
       const { mapPath, migrationsDir } = writeFixture(root, {
-        map: operationalTableMap,
+        map: docsFtsTableMap,
         migrations: {
           "001.sql": "CREATE VIRTUAL TABLE docs USING fts5(title, body);",
         },
       });
+      const shadowTablePaths = [
+        "d1_tables.docs_config",
+        "d1_tables.docs_content",
+        "d1_tables.docs_data",
+        "d1_tables.docs_docsize",
+        "d1_tables.docs_idx",
+      ];
+
       const without = checkMapVsMigrations({ mapFilePath: mapPath, migrationsDir });
       expect(without.kind).toBe("findings");
       if (without.kind !== "findings") {
@@ -791,22 +889,30 @@ describe("FTS5 when available", () => {
       const tableFindings = without.findings.filter(
         (f) => f.code === "table_not_in_map",
       );
-      expect(tableFindings.some((f) => f.path === "d1_tables.docs_config")).toBe(true);
-      expect(tableFindings.some((f) => f.path === "d1_tables.docs_data")).toBe(true);
-      expect(tableFindings.some((f) => f.path === "d1_tables.docs")).toBe(false);
+      expect(tableFindings.map((f) => f.path).sort()).toEqual(shadowTablePaths.sort());
+      expect(
+        without.findings.some(
+          (f) => f.code === "column_not_in_map" && f.path.startsWith("d1_tables.docs."),
+        ),
+      ).toBe(false);
 
       const withIgnore = checkMapVsMigrations({
         mapFilePath: mapPath,
         migrationsDir,
         ignoreTables: [
           "docs_config",
-          "docs_data",
-          "docs_idx",
           "docs_content",
+          "docs_data",
           "docs_docsize",
+          "docs_idx",
         ],
       });
-      expect(withIgnore.kind).toBe("ok");
+      expect(withIgnore).toMatchObject({
+        kind: "ok",
+        outcome: "checked",
+        tableCount: 1,
+        columnCount: 2,
+      });
     },
   );
 });

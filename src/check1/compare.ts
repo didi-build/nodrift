@@ -1,6 +1,6 @@
 import type { DataMap, D1Table } from "../data-map/types.js";
 import { finding, type Finding } from "../findings.js";
-import { isIgnoredTable } from "./schema-filter.js";
+import { isBuiltInIgnoredTable, isUserIgnoredTable } from "./schema-filter.js";
 import type { SchemaSnapshot } from "./types.js";
 
 function compareCodeUnits(a: string, b: string): number {
@@ -138,7 +138,19 @@ export function compareSchemaToMap(
         tableName,
         caseOnlyCounterpart(tableName, schemaTableNames),
       );
-      if (isIgnoredTable(tableName, ignoreTables)) {
+      if (isBuiltInIgnoredTable(tableName)) {
+        pending.push({
+          sortTable: tableName,
+          sortColumn: "",
+          finding: finding(
+            mapFile,
+            `d1_tables.${tableName}`,
+            "table_not_in_schema",
+            `table \`${tableName}\` is declared in the map (${mapColumns.length} column(s)) but is a built-in ignored table (\`sqlite_*\`, \`_cf_*\`, \`d1_migrations\`); remove it from the map${hint}`,
+            `remove d1_tables.${tableName}`,
+          ),
+        });
+      } else if (isUserIgnoredTable(tableName, ignoreTables)) {
         pending.push({
           sortTable: tableName,
           sortColumn: "",

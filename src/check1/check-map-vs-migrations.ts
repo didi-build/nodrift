@@ -64,9 +64,15 @@ export function checkMapVsMigrations(
   if (!replayed.ok) {
     const failed = migrations.find((m) => m.fileName === replayed.migrationFile);
     let message = `migration \`${replayed.migrationFile}\` failed: ${replayed.sqlError}`;
-    if (replayed.sqlError.startsWith("no such module:")) {
-      message +=
-        "; this Node's built-in SQLite does not include that module; FTS5 requires Node 22.16 or newer (nodrift supports >=22.13)";
+    const missingModule = /^no such module:\s*(\S+)/i.exec(replayed.sqlError);
+    if (missingModule) {
+      const moduleName = missingModule[1].toLowerCase();
+      if (moduleName === "fts5") {
+        message +=
+          "; this Node's built-in SQLite does not include that module; FTS5 requires Node 22.16 or newer (nodrift supports >=22.13)";
+      } else {
+        message += `; this Node's built-in SQLite does not include the \`${moduleName}\` module`;
+      }
     }
     return {
       kind: "fatal",
