@@ -5,7 +5,7 @@ export type BindingKind = "d1" | "r2" | "kv" | "queue" | "images";
 export type BindingLocation = {
   /** Human label, e.g. `top level`, `previews`, `env.staging`. */
   section: string;
-  /** JSON path inside the Wrangler config, e.g. `d1_databases[0].binding`. */
+  /** JSON path inside the Wrangler config, e.g. `env.staging.kv_namespaces[0].binding`. */
   path: string;
 };
 

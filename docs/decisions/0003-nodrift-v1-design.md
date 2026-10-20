@@ -443,7 +443,7 @@ Approved by the maintainer on **2026-10-19** (recorded here for implementers; th
 4. **Known limitation (FTS5 on older Node)** — Migrations that create FTS5 virtual tables require **Node 22.16 or newer** for in-memory replay with `node:sqlite`. On **22.13 through 22.15**, replay fails with `no such module: fts5`. `engines.node` remains `>=22.13.0`; consumers with FTS5 migrations should run Check 1 on Node 22.16+.
 5. **Check 2 section scan** — Parse the **top level**, every **`env.<name>`** block, and **`previews`**, taking the **union by binding name** (case-sensitive); each binding remembers every section that declares it.
 6. **Check 2 `multiple_d1_databases`** — More than one `d1_databases` entry in a **single** Wrangler section is a **`multiple_d1_databases`** finding (v1 supports one D1 database per section for Check 1 alignment).
-7. **Check 2 Wrangler file presence** — **`wrangler.toml` only** is a **fatal**; **no** Wrangler JSON/JSONC file is **`nothing_to_check`** (not a finding).
+7. **Check 2 Wrangler file presence** — **`wrangler.toml` only** is a **fatal** in every case. **Missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any other unreadable directory is a **fatal** (`check the \`wrangler\` path`). A readable directory with **no** `wrangler.jsonc`/`wrangler.json` is **`nothing_to_check`** only when **no** `other_items` entry has a **`binding:`**; if the map references bindings but no Wrangler JSON/JSONC file is found, that is a **fatal** listing those binding names.
 8. **Check 2 stale bindings** — **No** reverse check in v1 (map `binding:` values with no Wrangler counterpart do not fail Check 2).
 
 ---

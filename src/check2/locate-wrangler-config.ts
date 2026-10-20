@@ -46,7 +46,13 @@ export function locateWranglerConfig(
     names = fs.readdirSync(wranglerDir);
   } catch (err) {
     if (isMissingDirError(err)) {
-      return { ok: true, kind: "nothing" };
+      return {
+        ok: false,
+        fatal: fatal(
+          wranglerDir,
+          `Wrangler directory not found or not a directory: ${wranglerDir}; check the \`wrangler\` path`,
+        ),
+      };
     }
     return {
       ok: false,

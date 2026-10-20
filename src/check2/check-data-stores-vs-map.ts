@@ -1,7 +1,11 @@
 import { expandDataMap } from "../data-map/expand.js";
 import { fatal } from "../findings.js";
 import { loadDataMapFile } from "../load.js";
-import { collectCoveredBindings, compareBindingsToMap } from "./compare.js";
+import {
+  collectCoveredBindings,
+  compareBindingsToMap,
+  formatMapBindingNames,
+} from "./compare.js";
 import { extractBindings } from "./extract-bindings.js";
 import {
   locateWranglerConfig,
@@ -34,6 +38,8 @@ export function checkDataStoresVsMap(
     return { kind: "findings", findings: loaderFindings };
   }
 
+  const mapBindings = collectCoveredBindings(expandDataMap(map));
+
   const located = locateWranglerConfig(wranglerDir, wranglerConfigFs);
   if (!located.ok) {
     if ("fatal" in located) {
@@ -49,6 +55,16 @@ export function checkDataStoresVsMap(
   }
 
   if (located.kind === "nothing") {
+    if (mapBindings.size > 0) {
+      const names = formatMapBindingNames(mapBindings);
+      return {
+        kind: "fatal",
+        fatal: fatal(
+          wranglerDir,
+          `the map references bindings (${names}) but no Wrangler config was found in ${wranglerDir}; check the \`wrangler\` path`,
+        ),
+      };
+    }
     return {
       kind: "ok",
       outcome: "nothing_to_check",

@@ -2,7 +2,7 @@ import type { ExpandedEntry } from "../data-map/types.js";
 import { finding, type Finding } from "../findings.js";
 import type { CollectedBinding } from "./types.js";
 import type { MultipleD1InSection } from "./extract-bindings.js";
-import type { BindingKind } from "./types.js";
+import type { BindingKind, BindingLocation } from "./types.js";
 
 function compareCodeUnits(a: string, b: string): number {
   if (a < b) {
@@ -39,6 +39,16 @@ function sectionSortKey(section: string): string {
   return section;
 }
 
+function sectionPriority(section: string): number {
+  if (section === "top level") {
+    return 0;
+  }
+  if (section === "previews") {
+    return 2;
+  }
+  return 1;
+}
+
 function sortSections(sections: string[]): string[] {
   return [...new Set(sections)].sort((a, b) =>
     compareCodeUnits(sectionSortKey(a), sectionSortKey(b)),
@@ -56,6 +66,21 @@ function formatSections(sections: string[]): string {
   const last = unique[unique.length - 1];
   const rest = unique.slice(0, -1).join(", ");
   return `${rest}, and ${last}`;
+}
+
+function primaryBindingPath(locations: readonly BindingLocation[]): string {
+  const sorted = [...locations].sort((a, b) => {
+    const byPriority = sectionPriority(a.section) - sectionPriority(b.section);
+    if (byPriority !== 0) {
+      return byPriority;
+    }
+    const bySection = compareCodeUnits(a.section, b.section);
+    if (bySection !== 0) {
+      return bySection;
+    }
+    return compareCodeUnits(a.path, b.path);
+  });
+  return sorted[0]?.path ?? "";
 }
 
 function suggestedItemId(kind: BindingKind, bindingName: string): string {
@@ -92,6 +117,10 @@ export function collectCoveredBindings(entries: ExpandedEntry[]): Set<string> {
   return covered;
 }
 
+export function formatMapBindingNames(covered: ReadonlySet<string>): string {
+  return [...covered].sort(compareCodeUnits).join(", ");
+}
+
 /**
  * Pure comparison of Wrangler bindings to `other_items` `binding:` coverage.
  */
@@ -104,13 +133,12 @@ export function compareBindingsToMap(
   const findings: Finding[] = [];
 
   for (const multi of multipleD1InSection) {
-    const path = [...multi.paths].sort(compareCodeUnits)[0];
     findings.push(
       finding(
         configFile,
-        path,
+        multi.d1ArrayPath,
         "multiple_d1_databases",
-        `section \`${multi.section}\` declares ${multi.paths.length} D1 database bindings; v1 supports one D1 database per section`,
+        `section \`${multi.section}\` declares ${multi.bindingCount} D1 database bindings; v1 supports one D1 database per section`,
         "declare at most one `d1_databases` entry per Wrangler config section",
       ),
     );
@@ -121,7 +149,7 @@ export function compareBindingsToMap(
       continue;
     }
     const sections = formatSections(binding.locations.map((loc) => loc.section));
-    const primaryPath = binding.locations[0]?.path ?? binding.name;
+    const primaryPath = primaryBindingPath(binding.locations);
     findings.push(
       finding(
         configFile,

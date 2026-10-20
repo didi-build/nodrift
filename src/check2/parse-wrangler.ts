@@ -1,5 +1,11 @@
 import { readFileSync } from "node:fs";
-import { parse, type ParseError } from "jsonc-parser";
+import {
+  getLocation,
+  parse,
+  printParseErrorCode,
+  type JSONPath,
+  type ParseError,
+} from "jsonc-parser";
 import { fatal, type FatalError } from "../findings.js";
 
 export type WranglerReadFs = {
@@ -17,6 +23,13 @@ function formatErr(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+function stripLeadingBom(text: string): string {
+  if (text.charCodeAt(0) === 0xfeff) {
+    return text.slice(1);
+  }
+  return text;
 }
 
 function offsetToLineColumn(
@@ -37,10 +50,31 @@ function offsetToLineColumn(
   return { line, column };
 }
 
+function formatJsonPath(path: JSONPath): string {
+  if (path.length === 0) {
+    return "";
+  }
+  let result = "";
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      result += `[${segment}]`;
+    } else if (result.length === 0) {
+      result = segment;
+    } else {
+      result += `.${segment}`;
+    }
+  }
+  return result;
+}
+
 function firstParseErrorMessage(text: string, errors: ParseError[]): string {
   const first = errors[0];
   const { line, column } = offsetToLineColumn(text, first.offset);
-  return `syntax error at line ${line}, column ${column}`;
+  const location = getLocation(text, first.offset);
+  const path = formatJsonPath(location.path);
+  const codeName = printParseErrorCode(first.error);
+  const atPath = path.length > 0 ? ` at ${path}` : "";
+  return `JSONC syntax error${atPath}: ${codeName} (line ${line}, column ${column})`;
 }
 
 export type ParseWranglerResult =
@@ -63,7 +97,9 @@ export function parseWranglerConfigFile(
     };
   }
 
-  if (text.trim().length === 0) {
+  const withoutBom = stripLeadingBom(text);
+
+  if (withoutBom.trim().length === 0) {
     return {
       ok: false,
       fatal: fatal(configPath, "Wrangler config is empty"),
@@ -71,7 +107,7 @@ export function parseWranglerConfigFile(
   }
 
   const errors: ParseError[] = [];
-  const value = parse(text, errors, {
+  const value = parse(withoutBom, errors, {
     allowTrailingComma: true,
     disallowComments: false,
   });
@@ -79,7 +115,7 @@ export function parseWranglerConfigFile(
   if (errors.length > 0) {
     return {
       ok: false,
-      fatal: fatal(configPath, firstParseErrorMessage(text, errors)),
+      fatal: fatal(configPath, firstParseErrorMessage(withoutBom, errors)),
     };
   }
 

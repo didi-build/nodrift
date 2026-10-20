@@ -149,7 +149,7 @@ Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` are
 
 **Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, Durable Objects, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config.
 
-**Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`). **No config file** → `ok` with `outcome: "nothing_to_check"`. JSONC allows comments and trailing commas; parse errors are **fatals** with line and column.
+**Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`) in every case. A **missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any **unreadable** directory is a **fatal** naming the path (`check the \`wrangler\` path`). A **readable directory with no** `wrangler.jsonc`/`wrangler.json`→`ok`with`outcome: "nothing_to_check"`**only when** no`other_items`entry has a`binding:`; if the map lists bindings but no Wrangler JSON/JSONC file is present, that is a **fatal** listing the binding names. JSONC allows comments and trailing commas; a leading UTF-8 BOM is stripped before parse. Parse errors are **fatals** with a JSONC property path (when known), error name, and line/column.
 
 **Single D1 database:** more than one `d1_databases` entry in the same section yields `multiple_d1_databases` (v1 replays one migrations directory in Check 1).
 

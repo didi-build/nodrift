@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -161,6 +161,7 @@ describe("checkDataStoresVsMap", () => {
       expect(result.kind).toBe("findings");
       if (result.kind === "findings") {
         expect(result.findings[0].message).toContain("env.staging");
+        expect(result.findings[0].path).toBe("env.staging.r2_buckets[0].binding");
       }
     });
 
@@ -180,6 +181,33 @@ describe("checkDataStoresVsMap", () => {
       expect(result.kind).toBe("findings");
       if (result.kind === "findings") {
         expect(result.findings[0].message).toContain("previews");
+        expect(result.findings[0].path).toBe("previews.images.binding");
+      }
+    });
+
+    it("uses the top-level path when a binding is declared in top level, env, and previews", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": JSON.stringify({
+          kv_namespaces: [{ binding: "SHARED_KV", id: "1" }],
+          env: {
+            staging: {
+              kv_namespaces: [{ binding: "SHARED_KV", id: "2" }],
+            },
+          },
+          previews: {
+            kv_namespaces: [{ binding: "SHARED_KV", id: "3" }],
+          },
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        expect(result.findings).toHaveLength(1);
+        expect(result.findings[0].path).toBe("kv_namespaces[0].binding");
       }
     });
 
@@ -199,6 +227,7 @@ describe("checkDataStoresVsMap", () => {
       if (result.kind === "findings") {
         expect(result.findings).toHaveLength(1);
         expect(result.findings[0].message).toContain("top level and previews");
+        expect(result.findings[0].path).toBe("images.binding");
       }
     });
 
@@ -330,7 +359,63 @@ other_items:
         const multi = result.findings.filter((f) => f.code === "multiple_d1_databases");
         expect(multi).toHaveLength(1);
         expect(multi[0].message).toContain("top level");
+        expect(multi[0].path).toBe("d1_databases");
         expect(result.findings.some((f) => f.code === "binding_not_in_map")).toBe(true);
+      }
+    });
+
+    it("points multiple_d1_databases at env and previews d1_databases arrays", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": JSON.stringify({
+          env: {
+            staging: {
+              d1_databases: [
+                { binding: "A", database_name: "a", database_id: "1" },
+                { binding: "B", database_name: "b", database_id: "2" },
+              ],
+            },
+          },
+          previews: {
+            d1_databases: [
+              { binding: "C", database_name: "c", database_id: "3" },
+              { binding: "D", database_name: "d", database_id: "4" },
+            ],
+          },
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        const multi = result.findings.filter((f) => f.code === "multiple_d1_databases");
+        expect(multi.map((f) => f.path).sort()).toEqual([
+          "env.staging.d1_databases",
+          "previews.d1_databases",
+        ]);
+      }
+    });
+
+    it("checks bindings under an env block named __proto__", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": `{
+  "env": {
+    "__proto__": {
+      "kv_namespaces": [{ "binding": "PROTO_KV", "id": "x" }]
+    }
+  }
+}`,
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        expect(result.findings[0].path).toBe("env.__proto__.kv_namespaces[0].binding");
       }
     });
 
@@ -380,7 +465,24 @@ other_items:
       expect(result.kind).toBe("ok");
     });
 
-    it("returns fatal on JSON syntax error with line and column", () => {
+    it("returns fatal on JSON syntax error with path, code name, and line/column", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": '{ "b": }',
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toBe(
+          "JSONC syntax error at b: ValueExpected (line 1, column 8)",
+        );
+      }
+    });
+
+    it("formats JSONC syntax errors without a property path", () => {
       const wranglerDir = makeWranglerDir({
         "wrangler.jsonc": "{ broken",
       });
@@ -391,7 +493,81 @@ other_items:
       });
       expect(result.kind).toBe("fatal");
       if (result.kind === "fatal") {
-        expect(result.fatal.message).toMatch(/syntax error at line \d+, column \d+/);
+        expect(result.fatal.message).toMatch(
+          /^JSONC syntax error: \w+ \(line 1, column \d+\)$/,
+        );
+      }
+    });
+
+    it("reports JSONC syntax line/column with CRLF newlines", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": '{\r\n  "a": ,\r\n}',
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toBe(
+          "JSONC syntax error at a: ValueExpected (line 2, column 8)",
+        );
+      }
+    });
+
+    it("parses a UTF-8 BOM before valid JSON", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": `\uFEFF${JSON.stringify({ images: { binding: "IMAGES" } })}`,
+      });
+      const mapYaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: images.one
+    binding: IMAGES
+    whose: operational
+    data: x
+    purpose: y
+    processors: []
+    retention: r
+`;
+      const mapDir = makeMapDir(mapYaml);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("ok");
+    });
+
+    it("treats a BOM-only wrangler file as empty", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": "\uFEFF",
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toContain("empty");
+      }
+    });
+
+    it("reports syntax errors after a BOM at the correct line and column", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": `\uFEFF{ "x": }`,
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toBe(
+          "JSONC syntax error at x: ValueExpected (line 1, column 8)",
+        );
       }
     });
 
@@ -482,7 +658,7 @@ other_items:
       expect(result.kind).toBe("ok");
     });
 
-    it("returns nothing_to_check when no wrangler config exists", () => {
+    it("returns nothing_to_check when no wrangler config exists and the map has no bindings", () => {
       const wranglerDir = makeWranglerDir({});
       const mapDir = makeMapDir(minimalMap);
       const result = checkDataStoresVsMap({
@@ -494,6 +670,161 @@ other_items:
         outcome: "nothing_to_check",
         bindingCount: 0,
       });
+    });
+
+    it("returns fatal when the map lists bindings but the wrangler directory has no config", () => {
+      const wranglerDir = makeWranglerDir({});
+      const mapYaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: a
+    binding: [ALPHA, BETA]
+    whose: operational
+    data: x
+    purpose: y
+    processors: []
+    retention: r
+`;
+      const mapDir = makeMapDir(mapYaml);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toBe(
+          `the map references bindings (ALPHA, BETA) but no Wrangler config was found in ${wranglerDir}; check the \`wrangler\` path`,
+        );
+      }
+    });
+
+    it("returns fatal when wranglerDir does not exist and the map lists bindings", () => {
+      const mapYaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: a
+    binding: MISSING_PATH_KV
+    whose: operational
+    data: x
+    purpose: y
+    processors: []
+    retention: r
+`;
+      const mapDir = makeMapDir(mapYaml);
+      const missingDir = join(mapDir, "no-such-wrangler-dir");
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir: missingDir,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toBe(
+          `Wrangler directory not found or not a directory: ${missingDir}; check the \`wrangler\` path`,
+        );
+      }
+    });
+
+    it("returns fatal when wranglerDir is a regular file", () => {
+      const root = mkdtempSync(join(tmpdir(), "nodrift-check2-file-"));
+      tempRoots.push(root);
+      const wranglerPath = join(root, "wrangler-as-file");
+      writeFileSync(wranglerPath, "not a directory", "utf8");
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir: wranglerPath,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toContain(
+          "Wrangler directory not found or not a directory",
+        );
+        expect(result.fatal.message).toContain(wranglerPath);
+      }
+    });
+
+    it("returns fatal when wrangler.jsonc is a directory", () => {
+      const wranglerDir = makeWranglerDir({});
+      mkdirSync(join(wranglerDir, "wrangler.jsonc"));
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toContain(join(wranglerDir, "wrangler.jsonc"));
+        expect(result.fatal.message).toContain("EISDIR");
+      }
+    });
+  });
+
+  describe("wrangler filesystem hooks", () => {
+    it("treats readdir EACCES as fatal naming the directory", () => {
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir: "/blocked/wrangler",
+        wranglerConfigFs: {
+          readdirSync() {
+            const err = new Error("permission denied") as NodeJS.ErrnoException;
+            err.code = "EACCES";
+            throw err;
+          },
+        },
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.file).toBe("/blocked/wrangler");
+        expect(result.fatal.message).toContain("permission denied");
+        expect(result.fatal.message).not.toContain("nothing_to_check");
+      }
+    });
+
+    it("treats readdir EPERM as fatal naming the directory", () => {
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir: "/blocked/wrangler",
+        wranglerConfigFs: {
+          readdirSync() {
+            const err = new Error("operation not permitted") as NodeJS.ErrnoException;
+            err.code = "EPERM";
+            throw err;
+          },
+        },
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toContain("operation not permitted");
+      }
+    });
+
+    it("treats readFile EACCES as fatal naming the config file", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": "{}",
+      });
+      const configPath = join(wranglerDir, "wrangler.jsonc");
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+        wranglerReadFs: {
+          readFileSync(path) {
+            if (path === configPath) {
+              const err = new Error("permission denied") as NodeJS.ErrnoException;
+              err.code = "EACCES";
+              throw err;
+            }
+            throw new Error(`unexpected read: ${path}`);
+          },
+        },
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.file).toBe(configPath);
+        expect(result.fatal.message).toContain("permission denied");
+      }
     });
   });
 

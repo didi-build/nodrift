@@ -31,16 +31,19 @@ type MutableBinding = {
 
 export type MultipleD1InSection = {
   section: string;
-  paths: string[];
+  /** Path to the section's `d1_databases` array, e.g. `env.staging.d1_databases`. */
+  d1ArrayPath: string;
+  bindingCount: number;
 };
 
 function collectFromSection(
   sectionObj: Record<string, unknown>,
   sectionLabel: string,
+  pathPrefix: string,
   bindings: Map<string, MutableBinding>,
   multipleD1: MultipleD1InSection[],
 ): void {
-  const d1Paths: string[] = [];
+  let d1BindingCount = 0;
 
   const d1 = sectionObj.d1_databases;
   if (Array.isArray(d1)) {
@@ -49,15 +52,19 @@ function collectFromSection(
       if (!isRecord(entry)) {
         continue;
       }
-      const path = `d1_databases[${i}].binding`;
+      const path = `${pathPrefix}d1_databases[${i}].binding`;
       const read = readBindingString(entry.binding, path);
       if (read.ok) {
-        d1Paths.push(path);
+        d1BindingCount += 1;
         addBinding(bindings, read.binding, "d1", sectionLabel, path);
       }
     }
-    if (d1Paths.length > 1) {
-      multipleD1.push({ section: sectionLabel, paths: d1Paths });
+    if (d1BindingCount > 1) {
+      multipleD1.push({
+        section: sectionLabel,
+        d1ArrayPath: `${pathPrefix}d1_databases`,
+        bindingCount: d1BindingCount,
+      });
     }
   }
 
@@ -68,7 +75,7 @@ function collectFromSection(
       if (!isRecord(entry)) {
         continue;
       }
-      const path = `r2_buckets[${i}].binding`;
+      const path = `${pathPrefix}r2_buckets[${i}].binding`;
       const read = readBindingString(entry.binding, path);
       if (read.ok) {
         addBinding(bindings, read.binding, "r2", sectionLabel, path);
@@ -83,7 +90,7 @@ function collectFromSection(
       if (!isRecord(entry)) {
         continue;
       }
-      const path = `kv_namespaces[${i}].binding`;
+      const path = `${pathPrefix}kv_namespaces[${i}].binding`;
       const read = readBindingString(entry.binding, path);
       if (read.ok) {
         addBinding(bindings, read.binding, "kv", sectionLabel, path);
@@ -100,7 +107,7 @@ function collectFromSection(
         if (!isRecord(entry)) {
           continue;
         }
-        const path = `queues.producers[${i}].binding`;
+        const path = `${pathPrefix}queues.producers[${i}].binding`;
         const read = readBindingString(entry.binding, path);
         if (read.ok) {
           addBinding(bindings, read.binding, "queue", sectionLabel, path);
@@ -111,7 +118,7 @@ function collectFromSection(
 
   const images = sectionObj.images;
   if (isRecord(images)) {
-    const path = "images.binding";
+    const path = `${pathPrefix}images.binding`;
     const read = readBindingString(images.binding, path);
     if (read.ok) {
       addBinding(bindings, read.binding, "images", sectionLabel, path);
@@ -167,22 +174,37 @@ export function extractBindings(
   const map = new Map<string, MutableBinding>();
   const multipleD1: MultipleD1InSection[] = [];
 
-  collectFromSection(config, "top level", map, multipleD1);
-
-  const previews = config.previews;
-  if (isRecord(previews)) {
-    collectFromSection(previews, "previews", map, multipleD1);
-  }
+  collectFromSection(config, "top level", "", map, multipleD1);
 
   const env = config.env;
   if (isRecord(env)) {
-    const envNames = Object.keys(env).sort(compareCodeUnits);
+    const envBlocks: { name: string; block: Record<string, unknown> }[] = [];
+    const envNames = Object.getOwnPropertyNames(env).sort(compareCodeUnits);
     for (const envName of envNames) {
+      if (!Object.hasOwn(env, envName)) {
+        continue;
+      }
       const block = env[envName];
       if (isRecord(block)) {
-        collectFromSection(block, `env.${envName}`, map, multipleD1);
+        envBlocks.push({ name: envName, block });
       }
     }
+    const proto = Object.getPrototypeOf(env);
+    if (isRecord(proto) && proto !== Object.prototype) {
+      const hasProtoBlock = envBlocks.some((entry) => entry.name === "__proto__");
+      if (!hasProtoBlock) {
+        envBlocks.push({ name: "__proto__", block: proto });
+      }
+    }
+    envBlocks.sort((a, b) => compareCodeUnits(a.name, b.name));
+    for (const { name, block } of envBlocks) {
+      collectFromSection(block, `env.${name}`, `env.${name}.`, map, multipleD1);
+    }
+  }
+
+  const previews = config.previews;
+  if (isRecord(previews)) {
+    collectFromSection(previews, "previews", "previews.", map, multipleD1);
   }
 
   const bindings: CollectedBinding[] = [];
