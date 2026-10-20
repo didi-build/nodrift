@@ -176,10 +176,28 @@ other_items:
     retention: TODO
 ```
 
-## Commands
+## CLI
+
+Build once (`npm run build`) or rely on `npm test` (Vitest runs the build via `globalSetup`). Then from a consumer repo root:
+
+```bash
+npx nodrift check              # run Check 1 and Check 2 (plus subprocessors.yml when present)
+npx nodrift init               # idempotent owned-file scaffold (never overwrites)
+npx nodrift init --dry-run     # print planned creates/skips only
+npx nodrift --config path.json check
+```
+
+**Config:** optional strict JSON `nodrift.config.json` in the repo root (or `--config`). Keys: `map`, `subprocessors`, `migrations`, `wrangler` (directory), `ignoreTables`. Defaults match [`we-met`](https://github.com/didi-build/we-met): `docs/privacy/data-map.yml`, `docs/privacy/subprocessors.yml`, `migrations`, `.` for Wrangler.
+
+**Exit codes:** `0` pass, `1` findings, `2` misconfiguration or cannot run. `nodrift sync` is reserved and exits `2` in v1.
+
+**`init`** creates breach/deletion runbooks, `subprocessors.yml`, starter `data-map.yml` (from migrations when present, otherwise minimal), `SECURITY.md`, an optional `.github/pull_request_template.md`, and `.nodrift/manifest.json` (owned files only). Existing paths are skipped; an existing PR template triggers a printed privacy checklist block instead of overwriting.
+
+## Commands (development)
 
 ```bash
 npm install          # install deps and git hooks (prepare)
+npm run build        # compile CLI to dist/
 npm run check        # format, lint, typecheck, test, secrets, placeholders, attribution
 npm run test         # vitest
 npm run test:watch   # vitest watch mode

@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { loadConfig } from "./config/load-config.js";
 import { formatFatal } from "./cli/format-output.js";
 import { runCheck } from "./cli/run-check.js";
+import { runInit } from "./init/run-init.js";
 import { getPackageVersion, printUsageHint, USAGE } from "./cli/usage.js";
 
 function main(): void {
@@ -75,9 +76,11 @@ function main(): void {
     process.exit(result.exitCode);
   }
 
-  // init is implemented in commit B
-  process.stderr.write("nodrift init is not available yet\n");
-  process.exit(2);
+  if (command === "init") {
+    const result = runInit(process.cwd(), loaded.config, dryRun);
+    process.stdout.write(`${result.lines.join("\n")}\n`);
+    process.exit(result.exitCode);
+  }
 }
 
 main();

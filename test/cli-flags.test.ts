@@ -58,6 +58,11 @@ describe("nodrift CLI flags", () => {
     expect(runCli(tempRoot(), ["check", "--dry-run"]).status).toBe(2);
   });
 
+  it("allows dry-run with init", () => {
+    const result = runCli(tempRoot(), ["init", "--dry-run"]);
+    expect(result.status).toBe(0);
+  });
+
   it("rejects sync with message", () => {
     const result = runCli(tempRoot(), ["sync"]);
     expect(result.status).toBe(2);

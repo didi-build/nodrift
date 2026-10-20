@@ -1,0 +1,6 @@
+## Privacy checklist
+
+- [ ] `docs/privacy/data-map.yml` updated for schema, storage, or binding changes
+- [ ] `docs/privacy/subprocessors.yml` updated if vendors or regions changed
+- [ ] New personal-data fields have `whose`, `data`, `purpose`, `processors`, and `retention`
+- [ ] New outside vendors (email, analytics, support tools) reviewed even when not in Wrangler bindings
