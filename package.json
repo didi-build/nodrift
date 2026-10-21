@@ -22,6 +22,9 @@
     "d1"
   ],
   "type": "module",
+  "bin": {
+    "nodrift": "dist/cli.js"
+  },
   "engines": {
     "node": ">=22.13.0"
   },
@@ -31,6 +34,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "secrets": "secretlint \"**/*\"",

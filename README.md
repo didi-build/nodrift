@@ -176,10 +176,82 @@ other_items:
     retention: TODO
 ```
 
-## Commands
+## CLI
+
+Build once (`npm run build`) or rely on `npm test` (Vitest runs the build via `globalSetup`). Nodrift runs against **`process.cwd()`** as the repo root; every config path is relative to that directory unless it is absolute.
+
+### Commands
+
+| Command                                      | Purpose                                                           |
+| -------------------------------------------- | ----------------------------------------------------------------- |
+| `nodrift check [--config <path>]`            | Run Check 1, Check 2, and optional `subprocessors.yml` validation |
+| `nodrift init [--dry-run] [--config <path>]` | Idempotent scaffold of owned privacy files (never overwrites)     |
+| `nodrift sync`                               | Reserved for v2 — prints a message and exits `2`                  |
+| `nodrift --help` / `-h`                      | Usage on stdout                                                   |
+| `nodrift --version` / `-v`                   | Package version on stdout                                         |
+
+Misuse (unknown command/flag, extra arguments, `--dry-run` except with `init`, missing `--config` value) prints a usage hint on **stderr** and exits `2`.
+
+### Configuration
+
+Missing `nodrift.config.json` is fine (zero config). `--config <path>` must exist or exit `2`. Strict JSON (no comments); unknown keys, wrong types, and empty strings are errors. A leading UTF-8 BOM is stripped before parse.
+
+**Defaults** (match [`we-met`](https://github.com/didi-build/we-met)):
+
+| Key             | Default                          | Meaning                                                            |
+| --------------- | -------------------------------- | ------------------------------------------------------------------ |
+| `map`           | `docs/privacy/data-map.yml`      | Data map file                                                      |
+| `subprocessors` | `docs/privacy/subprocessors.yml` | Subprocessors file                                                 |
+| `migrations`    | `migrations`                     | Migrations **directory**                                           |
+| `wrangler`      | `.`                              | Wrangler config **directory** (`wrangler.jsonc` / `wrangler.json`) |
+| `ignoreTables`  | `[]`                             | Extra tables excluded from Check 1 and migration scaffolding       |
+
+Paths are resolved with `path.resolve(repoRoot, value)` so **absolute paths** in the config work as-is.
+
+Example:
+
+```json
+{
+  "map": "docs/privacy/data-map.yml",
+  "migrations": "migrations",
+  "wrangler": ".",
+  "ignoreTables": ["fts_data"]
+}
+```
+
+### Exit codes (`check`)
+
+| Code | Meaning        | Examples                                                                                                     |
+| ---- | -------------- | ------------------------------------------------------------------------------------------------------------ |
+| `0`  | Pass           | Checks ok, or nothing to check                                                                               |
+| `1`  | Problems found | Map/schema/binding drift, loader findings, subprocessors shape issues                                        |
+| `2`  | Cannot run     | Unreadable files, YAML/JSON fatals, bad config, failed migration replay, bad `migrations` / `wrangler` paths |
+
+`check` writes diagnostics to **stdout**; config and usage errors go to **stderr**.
+
+### `init`
+
+**Creates** (create-only, never overwrites):
+
+- Configured `map` and `subprocessors` paths
+- `docs/runbooks/breach-response.md`, `docs/privacy/breach-record-template.md`, `docs/runbooks/account-deletion.md`
+- `SECURITY.md`
+- `.github/pull_request_template.md` when no PR template is detected
+- `.nodrift/manifest.json` when at least one file is created in that run
+
+**Skip rules:** existing files are reported as `skipped <path> (exists)`. Corrupt or unsupported manifests exit `2` before any write. Parent paths that exist as non-directories exit `2` with no writes. `--dry-run` prints `would create` / `would skip` lines and writes nothing.
+
+**Starter map:** replays migrations (honoring `ignoreTables`) and scaffolds each column as `{ whose: TODO }` only. With no migrations: `schema_version: 1`, `d1_tables: {}`, `other_items: []`.
+
+**PR template:** if a template already exists (case-insensitive detection under `.github/`, repo root, `docs/`, or a file in `.github/PULL_REQUEST_TEMPLATE/`), `init` skips writing a template and prints the privacy checklist block to paste manually.
+
+**Manifest:** `{ "schemaVersion": 1, "files": [ { "path", "kind": "owned", "version", "sha256" } ] }`. v1 only creates **`owned`** entries; **`managed`** is reserved for v2 `sync`. Re-runs merge new entries for files created in that run (sorted by `path`).
+
+## Commands (development)
 
 ```bash
 npm install          # install deps and git hooks (prepare)
+npm run build        # compile CLI to dist/
 npm run check        # format, lint, typecheck, test, secrets, placeholders, attribution
 npm run test         # vitest
 npm run test:watch   # vitest watch mode

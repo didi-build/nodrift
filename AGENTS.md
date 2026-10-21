@@ -59,6 +59,7 @@ This file is the single source of truth for how agents work in this repository. 
 | Script                       | Purpose                                                                |
 | ---------------------------- | ---------------------------------------------------------------------- |
 | `npm run check`              | Format, lint, typecheck, test, secret scan, placeholders, attribution  |
+| `npm run build`              | Compile `src/` to `dist/` (`tsc -p tsconfig.build.json`)               |
 | `npm run lint`               | ESLint                                                                 |
 | `npm run format`             | Prettier write                                                         |
 | `npm run format:check`       | Prettier check                                                         |
