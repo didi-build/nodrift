@@ -121,6 +121,42 @@ export function inspectTarballFileList(tarballPaths, requiredTemplateRelPaths) {
   return { ok: true };
 }
 
+/**
+ * Maps pack/inspect/smoke outcomes to a process exit code (0 pass, 1 fail).
+ *
+ * @param {{
+ *   packedSize: number;
+ *   maxPackedBytes: number;
+ *   inspect: { ok: boolean; message?: string };
+ *   smokeOk?: boolean;
+ * }} input
+ * @returns {0 | 1}
+ */
+export function packageCheckExitCode(input) {
+  const { packedSize, maxPackedBytes, inspect, smokeOk = true } = input;
+  if (packedSize > maxPackedBytes) {
+    return 1;
+  }
+  if (!inspect.ok) {
+    return 1;
+  }
+  if (!smokeOk) {
+    return 1;
+  }
+  return 0;
+}
+
+function resolveMaxPackedBytes(overrides) {
+  if (overrides?.maxPackedBytes !== undefined) {
+    return overrides.maxPackedBytes;
+  }
+  const fromEnv = process.env.NODRIFT_PACKAGE_CHECK_MAX_BYTES;
+  if (fromEnv !== undefined && fromEnv !== "") {
+    return Number(fromEnv);
+  }
+  return MAX_PACKED_BYTES;
+}
+
 function npmExecPath() {
   const npm = process.env.npm_execpath;
   if (!npm) {
@@ -284,67 +320,77 @@ export async function smokeTestInstalledPackage(archivePath, expectedVersion) {
   }
 }
 
-async function runPackageCheck() {
+/**
+ * @param {{ maxPackedBytes?: number; skipSmoke?: boolean; ignorePackScripts?: boolean }} [overrides]
+ *   ignorePackScripts skips prepack (vitest only; dist comes from globalSetup).
+ * @returns {Promise<0 | 1>}
+ */
+export async function runPackageCheck(overrides = {}) {
+  const maxPackedBytes = resolveMaxPackedBytes(overrides);
+  const skipSmoke = overrides.skipSmoke === true;
   const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
   const packDir = mkdtempSync(join(tmpdir(), "nodrift-pack-"));
-  let exitCode = 0;
-  let archivePath;
+  const packArgs = ["pack", "--pack-destination", packDir];
+  if (
+    overrides.ignorePackScripts === true ||
+    process.env.NODRIFT_PACKAGE_CHECK_IGNORE_SCRIPTS === "1"
+  ) {
+    packArgs.push("--ignore-scripts");
+  }
 
   try {
     try {
-      runNpm(["pack", "--pack-destination", packDir], { cwd: packageRoot });
+      runNpm(packArgs, { cwd: packageRoot });
     } catch (err) {
       console.error(`package:check: npm pack failed: ${err.message}`);
-      exitCode = 1;
-      return;
+      return 1;
     }
 
     const archives = readdirSync(packDir).filter((f) => f.endsWith(".tgz"));
     if (archives.length !== 1) {
       console.error(`package:check: expected one .tgz, got ${archives.join(", ")}`);
-      exitCode = 1;
-      return;
+      return 1;
     }
-    archivePath = join(packDir, archives[0]);
-    const size = statSync(archivePath).size;
-    if (size > MAX_PACKED_BYTES) {
-      console.error(
-        `package:check: tarball size ${size} exceeds budget ${MAX_PACKED_BYTES}`,
-      );
-      exitCode = 1;
-      return;
-    }
+    const archivePath = join(packDir, archives[0]);
+    const packedSize = statSync(archivePath).size;
 
     let tarballPaths;
     try {
       tarballPaths = await listPackageTarballPaths(archivePath);
     } catch (err) {
       console.error(`package:check: read tarball failed: ${err.message}`);
-      exitCode = 1;
-      return;
+      return 1;
     }
 
     const inspect = inspectTarballFileList(tarballPaths, listTemplateRelPaths());
-    if (!inspect.ok) {
-      console.error(`package:check: ${inspect.message}`);
-      exitCode = 1;
-      return;
+    let smokeResult = { ok: true };
+    if (!skipSmoke) {
+      smokeResult = await smokeTestInstalledPackage(archivePath, pkg.version);
     }
 
-    const smoke = await smokeTestInstalledPackage(archivePath, pkg.version);
-    if (!smoke.ok) {
-      console.error(`package:check: ${smoke.message}`);
-      exitCode = 1;
+    const exitCode = packageCheckExitCode({
+      packedSize,
+      maxPackedBytes,
+      inspect,
+      smokeOk: smokeResult.ok,
+    });
+    if (exitCode !== 0) {
+      if (packedSize > maxPackedBytes) {
+        console.error(
+          `package:check: tarball size ${packedSize} exceeds budget ${maxPackedBytes}`,
+        );
+      } else if (!inspect.ok) {
+        console.error(`package:check: ${inspect.message}`);
+      } else if (!smokeResult.ok) {
+        console.error(`package:check: ${smokeResult.message}`);
+      }
     }
+    return exitCode;
   } catch (err) {
     console.error(`package:check: ${err.message}`);
-    exitCode = 1;
+    return 1;
   } finally {
     rmSync(packDir, { recursive: true, force: true });
-  }
-
-  if (exitCode !== 0) {
-    process.exit(exitCode);
   }
 }
 
@@ -353,8 +399,12 @@ const isMain =
   import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isMain) {
-  runPackageCheck().catch((err) => {
-    console.error(`package:check: ${err.message}`);
-    process.exitCode = 1;
-  });
+  runPackageCheck()
+    .then((code) => {
+      process.exit(code);
+    })
+    .catch((err) => {
+      console.error(`package:check: ${err.message}`);
+      process.exit(1);
+    });
 }
