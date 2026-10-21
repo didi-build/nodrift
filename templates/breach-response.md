@@ -9,13 +9,13 @@ Use this runbook when you suspect or confirm unauthorized access to, loss of, or
 
 ## 2. Assess real risk of significant harm
 
-Under PIPEDA, assess whether the breach creates a **real risk of significant harm** to an individual. Consider the **sensitivity** of the personal information involved and the **probability** that the information will be misused.
+Under PIPEDA, assess whether the breach creates a **real risk of significant harm** to an individual (see OPC guidance, Part 6). Consider the **sensitivity** of the personal information involved and the **probability** that the information will be misused.
 
 ## 3. Report to the Privacy Commissioner of Canada
 
-When the breach creates a real risk of significant harm, report it to the Office of the Privacy Commissioner of Canada **as soon as feasible after the organization determines that the breach occurred** (see OPC guidance, Part 3; Breach of Security Safeguards Regulations, s. 4).
+When the breach creates a real risk of significant harm, report it to the Office of the Privacy Commissioner of Canada **as soon as feasible after the organization determines that the breach occurred** (PIPEDA s. 10.1(2); see OPC guidance, Parts 1 and 2; Breach of Security Safeguards Regulations, s. 2).
 
-- OPC guidance (Part 3): [What you need to know about mandatory reporting of breaches of security safeguards](https://www.priv.gc.ca/en/privacy-topics/privacy-for-businesses/privacy-breaches-at-your-business/gd_pb_201810/)
+- OPC guidance: [What you need to know about mandatory reporting of breaches of security safeguards](https://www.priv.gc.ca/en/privacy-topics/privacy-for-businesses/privacy-breaches-at-your-business/gd_pb_201810/)
 - Breach report form: [Report a privacy breach at your business](https://www.priv.gc.ca/en/report-a-concern/report-a-privacy-breach-at-your-organization/report-a-privacy-breach-at-your-business/)
 
 ## 4. Notify affected individuals
@@ -24,7 +24,7 @@ Unless otherwise prohibited by law, notify affected individuals as soon as feasi
 
 ## 5. Notify other organizations
 
-When you notify an individual, you must also notify any government institutions or organizations that you believe can reduce the risk of harm that could result from the breach or mitigate that harm (OPC guidance, Part 4). Examples from the OPC include law enforcement (when there is an attack on your computer system and you believe it may be able to reduce or mitigate the harm) and the organization that processes your payments (for a breach affecting payment card information).
+When you notify an individual, you must also notify any government institutions or organizations that you believe can reduce the risk of harm that could result from the breach or mitigate that harm (OPC guidance, Part 5). Examples from the OPC include law enforcement (when there is an attack on your computer system and you believe it may be able to reduce or mitigate the harm) and the organization that processes your payments (for a breach affecting payment card information).
 
 ## 6. Keep breach records
 

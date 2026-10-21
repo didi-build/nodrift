@@ -11,10 +11,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { contentSha256 } from "../src/init/manifest.js";
 import { findExistingPrTemplate } from "../src/init/pr-template.js";
 import { runCli, writeWeMetProject } from "./cli-helpers.js";
+
+const packageRoot = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 const tempRoots: string[] = [];
 afterEach(() => {
@@ -286,30 +289,12 @@ describe("nodrift init CLI", () => {
     expect(existsSync(join(root, "docs/privacy/data-map.yml"))).toBe(false);
   });
 
-  it("includes PIPEDA breach-response facts and skeleton note in templates", () => {
+  it("copies PIPEDA templates unchanged through init", () => {
     const root = tempRoot();
     runCli(root, ["init"]);
     const breach = readFileSync(join(root, "docs/runbooks/breach-response.md"), "utf8");
-    expect(breach).toContain("24 months");
-    expect(breach).toContain("real risk of significant harm");
-    expect(breach).toContain("gazette.gc.ca");
-    expect(breach).toContain("not legal advice");
-    expect(breach).toContain("Unless otherwise prohibited by law");
-    expect(breach).toContain(
-      "Indirect notification is permitted only when direct notification",
-    );
-    expect(breach).toContain("s. 5(1)");
-    expect(breach).toContain("s. 5(2)");
-    expect(breach).toContain(
-      "notify any government institutions or organizations that you believe can reduce the risk of harm",
-    );
-    expect(breach).toContain("organization that processes your payments");
-    expect(breach).not.toContain("prohibits direct notification");
-    expect(breach).toContain(
-      "https://www.priv.gc.ca/en/privacy-topics/privacy-for-businesses/privacy-breaches-at-your-business/gd_pb_201810/",
-    );
-    expect(breach).toContain(
-      "https://www.priv.gc.ca/en/report-a-concern/report-a-privacy-breach-at-your-organization/report-a-privacy-breach-at-your-business/",
+    expect(breach).toBe(
+      readFileSync(join(packageRoot, "templates/breach-response.md"), "utf8"),
     );
     const record = readFileSync(
       join(root, "docs/privacy/breach-record-template.md"),

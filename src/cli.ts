@@ -8,6 +8,7 @@ import { getPackageVersion, printUsageHint, USAGE } from "./cli/usage.js";
 import { runInit } from "./init/run-init.js";
 
 async function main(): Promise<void> {
+  // @internal test-only hook for unexpected-error integration tests (not part of the public CLI).
   if (process.env.NODRIFT_TEST_THROW === "1") {
     throw new Error("injected test failure");
   }
