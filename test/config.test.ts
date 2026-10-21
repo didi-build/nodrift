@@ -61,4 +61,9 @@ describe("parseConfig", () => {
     expect(parseConfig("[]", file).ok).toBe(false);
     expect(parseConfig("null", file).ok).toBe(false);
   });
+
+  it("accepts JSON with a leading UTF-8 BOM", () => {
+    const result = parseConfig("\uFEFF{}", file);
+    expect(result).toEqual({ ok: true, config: { ...DEFAULT_CONFIG } });
+  });
 });

@@ -54,6 +54,14 @@ describe("nodrift CLI flags", () => {
     expect(runCli(tempRoot(), ["check", "--wat"]).status).toBe(2);
   });
 
+  it("rejects --config without a value", () => {
+    expect(runCli(tempRoot(), ["check", "--config"]).status).toBe(2);
+  });
+
+  it("rejects extra positional arguments", () => {
+    expect(runCli(tempRoot(), ["check", "extra"]).status).toBe(2);
+  });
+
   it("rejects dry-run with check", () => {
     expect(runCli(tempRoot(), ["check", "--dry-run"]).status).toBe(2);
   });

@@ -2,38 +2,34 @@
 
 Copy this file for each incident (do not edit this template in place).
 
-## Summary
+## Identification
 
 - **Incident ID:**
-- **Detected (UTC):**
+- **Date breach was determined (UTC):**
+- **Date discovered (UTC):**
 - **Incident lead:**
-- **Status:** investigating / contained / closed
 
-## Scope
+## Circumstances
 
-- **Systems affected:**
-- **Data categories (from data map):**
-- **Individuals affected (estimate):**
+- **What happened:**
+- **Systems and data involved:**
+- **Number of individuals affected (estimate):**
 
-## Timeline
+## Harm assessment
 
-| Time (UTC) | Event |
-| ---------- | ----- |
-|            |       |
+- **Sensitivity of information:**
+- **Probability of misuse:**
+- **Conclusion (real risk of significant harm?):**
 
-## Actions taken
+## Reporting and notification
 
-- Containment:
-- Eradication:
-- Recovery:
+- **Reported to the OPC:** yes / no — date:
+- **Individuals notified:** yes / no — date:
+- **If not reported or not notified, brief reason:**
+- **Other organizations notified:**
 
-## Notifications
+## Retention
 
-- Internal:
-- Regulators:
-- Affected individuals:
+- **Keep until:** 24 months after the determination date (for every breach, whether or not it was reportable).
 
-## Follow-up
-
-- Root cause:
-- Remediation tickets:
+_This document is a starting skeleton, not legal advice. Review it with qualified counsel before relying on it._

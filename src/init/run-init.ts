@@ -1,20 +1,34 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import type { ResolvedNodriftConfig } from "../config/load-config.js";
-import { contentSha256, type ManifestFileEntry, buildManifest } from "./manifest.js";
+import { fatal, type FatalError } from "../findings.js";
+import {
+  buildManifest,
+  contentSha256,
+  mergeManifestEntries,
+  parseManifestJson,
+  type ManifestFileEntry,
+} from "./manifest.js";
 import { kitVersionFromModule, readPackageTemplate } from "./package-paths.js";
+import { assertAncestorDirectories, statPath } from "./path-state.js";
 import { findExistingPrTemplate } from "./pr-template.js";
 import { scaffoldDataMapYaml } from "./scaffold-map.js";
 
 const INIT_MODULE_URL = import.meta.url;
+const MANIFEST_REL = ".nodrift/manifest.json";
 
 export type InitPlanItem =
   | { action: "create"; relativePath: string; content: string }
-  | { action: "skip"; relativePath: string; reason: string };
+  | { action: "skip"; relativePath: string }
+  | { action: "write-manifest"; content: string };
 
 export type InitPlanResult =
-  | { ok: true; items: InitPlanItem[]; privacyChecklistBlock: string | null }
-  | { ok: false; message: string };
+  | {
+      ok: true;
+      items: InitPlanItem[];
+      privacyChecklistBlock: string | null;
+    }
+  | { ok: false; fatal: FatalError };
 
 export type InitApplyResult = {
   exitCode: number;
@@ -29,23 +43,95 @@ function repoRelative(repoRoot: string, absolutePath: string): string {
   return relative(repoRoot, absolutePath).split("\\").join("/");
 }
 
+function loadExistingManifest(
+  manifestPath: string,
+): { ok: true; manifest: ManifestFileEntry[] } | { ok: false; fatal: FatalError } {
+  const stat = statPath(manifestPath);
+  if (stat.kind === "missing") {
+    return { ok: true, manifest: [] };
+  }
+  if (stat.kind === "error") {
+    return { ok: false, fatal: stat.fatal };
+  }
+  if (stat.kind === "directory") {
+    return {
+      ok: false,
+      fatal: fatal(manifestPath, "manifest path is not a file"),
+    };
+  }
+
+  try {
+    const text = readFileSync(manifestPath, "utf8");
+    const parsed = parseManifestJson(text, manifestPath);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    return { ok: true, manifest: parsed.manifest?.files ?? [] };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      fatal: fatal(manifestPath, `cannot read manifest: ${detail}`),
+    };
+  }
+}
+
+function planOwnedFile(
+  repoRoot: string,
+  absolutePath: string,
+  template: string,
+  items: InitPlanItem[],
+): FatalError | null {
+  const ancestorError = assertAncestorDirectories(repoRoot, absolutePath);
+  if (ancestorError) {
+    return ancestorError;
+  }
+
+  const rel = repoRelative(repoRoot, absolutePath);
+  const stat = statPath(absolutePath);
+  if (stat.kind === "error") {
+    return stat.fatal;
+  }
+  if (stat.kind === "file") {
+    items.push({ action: "skip", relativePath: rel });
+    return null;
+  }
+  if (stat.kind === "directory") {
+    return fatal(absolutePath, "path exists but is not a file");
+  }
+
+  items.push({
+    action: "create",
+    relativePath: rel,
+    content: normalizeLf(template),
+  });
+  return null;
+}
+
 export function planInit(
   repoRoot: string,
   config: ResolvedNodriftConfig,
 ): InitPlanResult {
+  const manifestPath = join(repoRoot, MANIFEST_REL);
+  const existingManifest = loadExistingManifest(manifestPath);
+  if (!existingManifest.ok) {
+    return existingManifest;
+  }
+
   const items: InitPlanItem[] = [];
   const kitVersion = kitVersionFromModule(INIT_MODULE_URL);
 
-  const mapScaffold = scaffoldDataMapYaml(config.migrationsDir, config.mapPath);
+  const mapScaffold = scaffoldDataMapYaml(
+    config.migrationsDir,
+    config.mapPath,
+    config.ignoreTables,
+  );
   if (!mapScaffold.ok) {
-    return { ok: false, message: mapScaffold.fatal.message };
+    return mapScaffold;
   }
 
-  const staticFiles: Array<{ absolutePath: string; template: string }> = [
-    {
-      absolutePath: config.mapPath,
-      template: mapScaffold.yaml,
-    },
+  const ownedTargets: Array<{ absolutePath: string; template: string }> = [
+    { absolutePath: config.mapPath, template: mapScaffold.yaml },
     {
       absolutePath: config.subprocessorsPath,
       template: readPackageTemplate(INIT_MODULE_URL, "subprocessors.yml"),
@@ -68,69 +154,48 @@ export function planInit(
     },
   ];
 
-  for (const file of staticFiles) {
-    const rel = repoRelative(repoRoot, file.absolutePath);
-    if (existsSync(file.absolutePath)) {
-      items.push({ action: "skip", relativePath: rel, reason: "already exists" });
-    } else {
-      items.push({
-        action: "create",
-        relativePath: rel,
-        content: normalizeLf(file.template),
-      });
+  for (const target of ownedTargets) {
+    const err = planOwnedFile(repoRoot, target.absolutePath, target.template, items);
+    if (err) {
+      return { ok: false, fatal: err };
     }
   }
 
-  const existingPr = findExistingPrTemplate(repoRoot);
   let privacyChecklistBlock: string | null = null;
-  const prPath = join(repoRoot, ".github/pull_request_template.md");
+  const existingPr = findExistingPrTemplate(repoRoot);
   if (existingPr) {
-    items.push({
-      action: "skip",
-      relativePath: existingPr,
-      reason: "PR template already present",
-    });
+    items.push({ action: "skip", relativePath: existingPr });
     privacyChecklistBlock = readPackageTemplate(
       INIT_MODULE_URL,
       "privacy-checklist-block.txt",
     );
-  } else if (existsSync(prPath)) {
-    items.push({
-      action: "skip",
-      relativePath: ".github/pull_request_template.md",
-      reason: "already exists",
-    });
   } else {
-    items.push({
-      action: "create",
-      relativePath: ".github/pull_request_template.md",
-      content: normalizeLf(
-        readPackageTemplate(INIT_MODULE_URL, "pull_request_template.md"),
-      ),
-    });
+    const prErr = planOwnedFile(
+      repoRoot,
+      join(repoRoot, ".github/pull_request_template.md"),
+      readPackageTemplate(INIT_MODULE_URL, "pull_request_template.md"),
+      items,
+    );
+    if (prErr) {
+      return { ok: false, fatal: prErr };
+    }
   }
 
-  const manifestPath = join(repoRoot, ".nodrift/manifest.json");
-  const manifestRel = ".nodrift/manifest.json";
-  if (existsSync(manifestPath)) {
-    items.push({ action: "skip", relativePath: manifestRel, reason: "already exists" });
-  } else {
-    const creates = items.filter(
-      (item): item is Extract<InitPlanItem, { action: "create" }> =>
-        item.action === "create",
-    );
-    const manifestEntries: ManifestFileEntry[] = creates.map((item) => ({
+  const creates = items.filter(
+    (item): item is Extract<InitPlanItem, { action: "create" }> =>
+      item.action === "create",
+  );
+
+  if (creates.length > 0) {
+    const newEntries: ManifestFileEntry[] = creates.map((item) => ({
       path: item.relativePath,
       kind: "owned",
-      kitVersion,
+      version: kitVersion,
       sha256: contentSha256(item.content),
     }));
-    const manifestJson = `${JSON.stringify(buildManifest(kitVersion, manifestEntries), null, 2)}\n`;
-    items.push({
-      action: "create",
-      relativePath: manifestRel,
-      content: manifestJson,
-    });
+    const merged = mergeManifestEntries(existingManifest.manifest, newEntries);
+    const manifestJson = `${JSON.stringify(buildManifest(merged), null, 2)}\n`;
+    items.push({ action: "write-manifest", content: manifestJson });
   }
 
   return { ok: true, items, privacyChecklistBlock };
@@ -151,21 +216,61 @@ export function runInit(
   if (!planned.ok) {
     return {
       exitCode: 2,
-      lines: [`nodrift init: ${planned.message}`],
+      lines: [
+        `${planned.fatal.file}: ${planned.fatal.message}`,
+        "nodrift init: failed",
+      ],
     };
   }
 
   const lines: string[] = [];
   const written: string[] = [];
+  const manifestPath = join(repoRoot, MANIFEST_REL);
+  const manifestExisted = statPath(manifestPath).kind === "file";
 
   for (const item of planned.items) {
     if (item.action === "skip") {
-      lines.push(`nodrift init: skipped ${item.relativePath} (${item.reason})`);
+      lines.push(
+        dryRun
+          ? `would skip ${item.relativePath} (exists)`
+          : `skipped ${item.relativePath} (exists)`,
+      );
+      continue;
+    }
+
+    if (item.action === "write-manifest") {
+      if (dryRun) {
+        lines.push(
+          manifestExisted
+            ? `would update ${MANIFEST_REL}`
+            : `would create ${MANIFEST_REL}`,
+        );
+        continue;
+      }
+      try {
+        const dir = dirname(manifestPath);
+        mkdirSync(dir, { recursive: true });
+        if (manifestExisted) {
+          writeFileSync(manifestPath, item.content, "utf8");
+        } else {
+          writeFileSync(manifestPath, item.content, { encoding: "utf8", flag: "wx" });
+        }
+        written.push(MANIFEST_REL);
+        lines.push(`created ${MANIFEST_REL}`);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        if (written.length > 0) {
+          lines.push(`wrote ${written.join(", ")} before failure`);
+        }
+        lines.push(`failed to create ${MANIFEST_REL}: ${detail}`);
+        lines.push("nodrift init: failed");
+        return { exitCode: 2, lines };
+      }
       continue;
     }
 
     if (dryRun) {
-      lines.push(`nodrift init: would create ${item.relativePath}`);
+      lines.push(`would create ${item.relativePath}`);
       continue;
     }
 
@@ -173,27 +278,22 @@ export function runInit(
     try {
       writeExclusive(absolute, item.content);
       written.push(item.relativePath);
-      lines.push(`nodrift init: created ${item.relativePath}`);
+      lines.push(`created ${item.relativePath}`);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       if (written.length > 0) {
-        lines.push(`nodrift init: wrote ${written.join(", ")} before failure`);
+        lines.push(`wrote ${written.join(", ")} before failure`);
       }
-      lines.push(`nodrift init: failed to create ${item.relativePath}: ${detail}`);
+      lines.push(`failed to create ${item.relativePath}: ${detail}`);
+      lines.push("nodrift init: failed");
       return { exitCode: 2, lines };
     }
   }
 
   if (planned.privacyChecklistBlock) {
-    lines.push("nodrift init: paste this privacy checklist into your PR template:");
-    lines.push(planned.privacyChecklistBlock);
+    lines.push(planned.privacyChecklistBlock.trimEnd());
   }
 
-  if (dryRun) {
-    lines.push("nodrift init: dry run (no files written)");
-  } else {
-    lines.push("nodrift init: done");
-  }
-
+  lines.push(dryRun ? "nodrift init: dry run" : "nodrift init: ok");
   return { exitCode: 0, lines };
 }

@@ -1,86 +1,59 @@
 #!/usr/bin/env node
-import { parseArgs } from "node:util";
 import { loadConfig } from "./config/load-config.js";
 import { formatFatal } from "./cli/format-output.js";
+import { parseCli } from "./cli/parse-cli.js";
 import { runCheck } from "./cli/run-check.js";
-import { runInit } from "./init/run-init.js";
+import { writeStderr, writeStdout } from "./cli/stdio.js";
 import { getPackageVersion, printUsageHint, USAGE } from "./cli/usage.js";
+import { runInit } from "./init/run-init.js";
 
-function main(): void {
-  const { values, positionals, tokens } = parseArgs({
-    allowPositionals: true,
-    options: {
-      help: { type: "boolean", short: "h" },
-      version: { type: "boolean", short: "v" },
-      config: { type: "string" },
-      "dry-run": { type: "boolean" },
-    },
-    tokens: true,
-    strict: false,
-  });
-
-  for (const token of tokens) {
-    if (
-      token.kind === "option" &&
-      !["help", "version", "config", "dry-run"].includes(token.name)
-    ) {
-      printUsageHint(process.stderr);
-      process.exit(2);
-    }
-  }
-
-  if (values.help) {
-    process.stdout.write(USAGE);
-    process.exit(0);
-  }
-
-  if (values.version) {
-    process.stdout.write(`${getPackageVersion()}\n`);
-    process.exit(0);
-  }
-
-  const command = positionals[0];
-  const dryRun = values["dry-run"] === true;
-
-  if (dryRun && command !== "init") {
+async function main(): Promise<void> {
+  const parsed = parseCli(process.argv.slice(2));
+  if (!parsed.ok) {
     printUsageHint(process.stderr);
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
 
-  if (!command) {
-    printUsageHint(process.stderr);
-    process.exit(2);
+  if (parsed.help) {
+    await writeStdout(USAGE);
+    process.exitCode = 0;
+    return;
   }
 
-  if (command === "sync") {
-    process.stderr.write("nodrift sync is not available in v1\n");
-    process.exit(2);
+  if (parsed.version) {
+    await writeStdout(`${getPackageVersion()}\n`);
+    process.exitCode = 0;
+    return;
   }
 
-  if (command !== "check" && command !== "init") {
-    printUsageHint(process.stderr);
-    process.exit(2);
+  if (parsed.command === "sync") {
+    await writeStderr("nodrift sync is not available in v1\n");
+    process.exitCode = 2;
+    return;
   }
 
-  const configPathOption =
-    typeof values.config === "string" ? values.config : undefined;
-  const loaded = loadConfig(process.cwd(), configPathOption);
+  const loaded = loadConfig(process.cwd(), parsed.configPath);
   if (!loaded.ok) {
-    process.stderr.write(`${formatFatal(loaded.fatal)}\n`);
-    process.exit(2);
+    await writeStderr(`${formatFatal(loaded.fatal)}\n`);
+    process.exitCode = 2;
+    return;
   }
 
-  if (command === "check") {
+  if (parsed.command === "check") {
     const result = runCheck(loaded.config);
-    process.stdout.write(`${result.lines.join("\n")}\n`);
-    process.exit(result.exitCode);
+    await writeStdout(`${result.lines.join("\n")}\n`);
+    process.exitCode = result.exitCode;
+    return;
   }
 
-  if (command === "init") {
-    const result = runInit(process.cwd(), loaded.config, dryRun);
-    process.stdout.write(`${result.lines.join("\n")}\n`);
-    process.exit(result.exitCode);
-  }
+  const result = runInit(process.cwd(), loaded.config, parsed.dryRun);
+  await writeStdout(`${result.lines.join("\n")}\n`);
+  process.exitCode = result.exitCode;
 }
 
-main();
+void main().catch(async (err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  await writeStderr(`nodrift: unexpected error: ${message}\n`);
+  process.exitCode = 2;
+});

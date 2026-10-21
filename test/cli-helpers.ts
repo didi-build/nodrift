@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,36 @@ export function runCli(cwd: string, args: string[]): CliRun {
     stdout: result.stdout,
     stderr: result.stderr,
   };
+}
+
+export function runCliPiped(cwd: string, args: string[]): Promise<CliRun> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cliPath, ...args], {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutChunks.push(chunk);
+      // Slow the consumer so truncated pipe output fails the test if the CLI exits early.
+      child.stdout.pause();
+      setTimeout(() => child.stdout.resume(), 0);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (status) => {
+      resolve({
+        status,
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+      });
+    });
+  });
 }
 
 export function writeWeMetProject(root: string): void {

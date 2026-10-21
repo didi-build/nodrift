@@ -93,10 +93,14 @@ function expectStringArray(
 /**
  * Parse strict JSON config text. Unknown keys, wrong types, and empty strings are errors.
  */
+function stripUtf8Bom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 export function parseConfig(text: string, filePath: string): ParseConfigResult {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(stripUtf8Bom(text));
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return {

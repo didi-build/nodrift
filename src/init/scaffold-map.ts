@@ -4,6 +4,8 @@ import { createNodeSqliteSchemaReader } from "../check1/node-sqlite-schema-reade
 import type { FatalError } from "../findings.js";
 import { fatal } from "../findings.js";
 
+const EMPTY_MAP_YAML = "schema_version: 1\nd1_tables: {}\nother_items: []\n";
+
 export type ScaffoldMapResult =
   | { ok: true; yaml: string; fromMigrations: boolean }
   | { ok: false; fatal: FatalError };
@@ -11,6 +13,7 @@ export type ScaffoldMapResult =
 export function scaffoldDataMapYaml(
   migrationsDir: string,
   mapFilePath: string,
+  ignoreTables: readonly string[],
 ): ScaffoldMapResult {
   const discovered = discoverMigrationFiles(migrationsDir);
   if (!discovered.ok) {
@@ -18,11 +21,11 @@ export function scaffoldDataMapYaml(
   }
 
   if (discovered.migrations.length === 0) {
-    return { ok: true, yaml: "schema_version: 1\n", fromMigrations: false };
+    return { ok: true, yaml: EMPTY_MAP_YAML, fromMigrations: false };
   }
 
   const reader = createNodeSqliteSchemaReader();
-  const replayed = reader.replayMigrations(discovered.migrations, []);
+  const replayed = reader.replayMigrations(discovered.migrations, ignoreTables);
   if (!replayed.ok) {
     const failed = discovered.migrations.find(
       (m) => m.fileName === replayed.migrationFile,
@@ -40,22 +43,9 @@ export function scaffoldDataMapYaml(
   for (const [table, columns] of replayed.schema) {
     const columnEntries: Record<string, unknown> = {};
     for (const column of columns) {
-      columnEntries[column] = {
-        whose: "TODO",
-        data: "TODO",
-        purpose: "TODO",
-        processors: [],
-        retention: "TODO",
-      };
+      columnEntries[column] = { whose: "TODO" };
     }
-    d1_tables[table] = {
-      defaults: {
-        storage: "D1",
-        processors: ["Cloudflare"],
-        who_can_see: "operator",
-      },
-      columns: columnEntries,
-    };
+    d1_tables[table] = { columns: columnEntries };
   }
 
   const doc = {

@@ -155,6 +155,41 @@ describe("nodrift check CLI", () => {
     expect(result.stdout).toContain("subprocessors");
   });
 
+  it("honors ignoreTables from config during check 1", () => {
+    const root = tempRoot();
+    mkdirSync(join(root, "migrations"), { recursive: true });
+    writeFileSync(
+      join(root, "migrations/001.sql"),
+      "CREATE TABLE visible (id TEXT); CREATE TABLE hidden_t (id TEXT);\n",
+      "utf8",
+    );
+    mkdirSync(join(root, "docs/privacy"), { recursive: true });
+    writeFileSync(
+      join(root, "docs/privacy/data-map.yml"),
+      `schema_version: 1
+d1_tables:
+  visible:
+    columns:
+      id:
+        whose: operational
+        data: x
+        purpose: y
+        processors: []
+        retention: r
+other_items: []
+`,
+      "utf8",
+    );
+    writeFileSync(
+      join(root, "nodrift.config.json"),
+      JSON.stringify({ ignoreTables: ["hidden_t"] }),
+      "utf8",
+    );
+    const result = runCli(root, ["check"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("nodrift: ok");
+  });
+
   it("exits 2 when subprocessors path is not a readable file", () => {
     const root = tempRoot();
     mkdirSync(join(root, "docs/privacy"), { recursive: true });
@@ -166,7 +201,7 @@ describe("nodrift check CLI", () => {
     mkdirSync(join(root, "docs/privacy/subprocessors.yml"), { recursive: true });
     const result = runCli(root, ["check"]);
     expect(result.status).toBe(2);
-    expect(result.stdout).toContain("cannot read file");
+    expect(result.stdout).toContain("subprocessors path exists but is not a file");
   });
 });
 

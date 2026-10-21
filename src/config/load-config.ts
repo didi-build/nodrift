@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { fatal, type FatalError } from "../findings.js";
 import { DEFAULT_CONFIG, parseConfig, type NodriftConfig } from "./parse-config.js";
 
@@ -15,14 +15,22 @@ export type LoadConfigResult =
   | { ok: true; config: ResolvedNodriftConfig; configFilePath: string | null }
   | { ok: false; fatal: FatalError };
 
+function resolvePath(repoRoot: string, configPath: string): string {
+  return isAbsolute(configPath) ? configPath : resolve(repoRoot, configPath);
+}
+
 function resolvePaths(repoRoot: string, config: NodriftConfig): ResolvedNodriftConfig {
   return {
     ...config,
-    mapPath: join(repoRoot, config.map),
-    subprocessorsPath: join(repoRoot, config.subprocessors),
-    migrationsDir: join(repoRoot, config.migrations),
-    wranglerDir: join(repoRoot, config.wrangler),
+    mapPath: resolvePath(repoRoot, config.map),
+    subprocessorsPath: resolvePath(repoRoot, config.subprocessors),
+    migrationsDir: resolvePath(repoRoot, config.migrations),
+    wranglerDir: resolvePath(repoRoot, config.wrangler),
   };
+}
+
+function resolveConfigFilePath(repoRoot: string, configPathOption: string): string {
+  return resolvePath(repoRoot, configPathOption);
 }
 
 /**
@@ -34,8 +42,8 @@ export function loadConfig(
   configPathOption?: string,
 ): LoadConfigResult {
   const configFilePath = configPathOption
-    ? join(repoRoot, configPathOption)
-    : join(repoRoot, "nodrift.config.json");
+    ? resolveConfigFilePath(repoRoot, configPathOption)
+    : resolve(repoRoot, "nodrift.config.json");
 
   if (configPathOption) {
     try {

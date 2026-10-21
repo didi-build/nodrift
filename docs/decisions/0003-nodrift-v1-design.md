@@ -446,6 +446,18 @@ Approved by the maintainer on **2026-10-19** (recorded here for implementers; th
 7. **Check 2 Wrangler file presence** — **`wrangler.toml` only** is a **fatal** in every case. **Missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any other unreadable directory is a **fatal** (`check the \`wrangler\` path`). A readable directory with **no** `wrangler.jsonc`/`wrangler.json` is **`nothing_to_check`** only when **no** `other_items` entry has a **`binding:`**; if the map references bindings but no Wrangler JSON/JSONC file is found, that is a **fatal** listing those binding names.
 8. **Check 2 stale bindings** — **No** reverse check in v1 (map `binding:` values with no Wrangler counterpart do not fail Check 2).
 
+Approved by the maintainer on **2026-10-21** (CLI and `init` implementation, [DIDI-671](https://linear.app/didi-build/issue/DIDI-671)):
+
+9. **Build and `bin`** — TypeScript compiles `src/` to `dist/` (`tsconfig.build.json`, `npm run build`). The CLI entry is `dist/cli.js` with `#!/usr/bin/env node` via `package.json` `"bin": { "nodrift": "dist/cli.js" }`. The package stays `"private": true` until the publish ticket.
+10. **`wrangler` config key** — The `wrangler` value is a **directory** path (default `.`). Check 2 resolves `wrangler.jsonc`, then `wrangler.json`, inside that directory.
+11. **`check` flow** — Load and validate the map once as a gate (fatal → exit `2`, findings → exit `1`, neither check runs). Optionally validate `subprocessors.yml` when the file exists. Run Check 1 and Check 2 independently; aggregate fatals and findings for exit codes.
+12. **CLI output streams** — `check` diagnostics go to **stdout**; usage and config errors go to **stderr**. The CLI sets `process.exitCode` and drains stdout/stderr before exit (no `process.exit` immediately after writes).
+13. **`init` outputs** — Default owned paths: configured `map` and `subprocessors`, `docs/runbooks/breach-response.md`, `docs/privacy/breach-record-template.md`, `docs/runbooks/account-deletion.md`, `SECURITY.md`, optional `.github/pull_request_template.md`, and `.nodrift/manifest.json`.
+14. **Starter map without migrations** — `schema_version: 1`, `d1_tables: {}`, `other_items: []`.
+15. **PR template detection** — Case-insensitive match for `.github/pull_request_template.md`, root `pull_request_template.md`, `docs/pull_request_template.md`, or any **file** under `.github/PULL_REQUEST_TEMPLATE/` (an empty directory does not count). When a template already exists, `init` prints the privacy checklist block instead of writing a template.
+16. **Manifest** — `.nodrift/manifest.json` shape: `{ "schemaVersion": 1, "files": [ { "path", "kind": "owned", "version", "sha256" } ] }`. Written or merged only when at least one owned file is created; corrupt or unsupported manifests fail before any write.
+17. **Templates** — Package-root `templates/` plain files (LF); `init` copies them without substitution. Breach templates record PIPEDA breach-record and reporting facts with the Canada Gazette SOR/2018-64 s. 6(1) link and OPC breach guidance URLs; each template ends with a one-line skeleton / not-legal-advice note.
+
 ---
 
 ## Consequences

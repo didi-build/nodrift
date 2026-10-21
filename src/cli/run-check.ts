@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { fatal } from "../findings.js";
 import { checkMapVsMigrations } from "../check1/check-map-vs-migrations.js";
 import type { CheckMapVsMigrationsResult } from "../check1/types.js";
 import { checkDataStoresVsMap } from "../check2/check-data-stores-vs-map.js";
@@ -19,12 +20,39 @@ export type RunCheckResult = {
   lines: string[];
 };
 
-function subprocessorsPathExists(path: string): boolean {
+function isMissingPathError(err: unknown): boolean {
+  if (err && typeof err === "object" && "code" in err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "ENOENT" || code === "ENOTDIR";
+  }
+  return false;
+}
+
+function formatErr(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+type SubprocessorsPathState =
+  { kind: "missing" } | { kind: "file" } | { kind: "fatal"; fatal: FatalError };
+
+function subprocessorsPathState(path: string): SubprocessorsPathState {
   try {
-    statSync(path);
-    return true;
-  } catch {
-    return false;
+    const st = statSync(path);
+    if (st.isFile()) {
+      return { kind: "file" };
+    }
+    return {
+      kind: "fatal",
+      fatal: fatal(path, "subprocessors path exists but is not a file"),
+    };
+  } catch (err) {
+    if (isMissingPathError(err)) {
+      return { kind: "missing" };
+    }
+    return {
+      kind: "fatal",
+      fatal: fatal(path, `cannot read subprocessors path: ${formatErr(err)}`),
+    };
   }
 }
 
@@ -101,7 +129,12 @@ export function runCheck(config: ResolvedNodriftConfig): RunCheckResult {
   let subprocessorsFatal: FatalError | undefined;
   let subprocessorsFindingCount = 0;
 
-  if (subprocessorsPathExists(config.subprocessorsPath)) {
+  const subprocessorsState = subprocessorsPathState(config.subprocessorsPath);
+  if (subprocessorsState.kind === "fatal") {
+    subprocessorsHadFile = true;
+    subprocessorsFatal = subprocessorsState.fatal;
+    fatals.push(subprocessorsState.fatal);
+  } else if (subprocessorsState.kind === "file") {
     subprocessorsHadFile = true;
     const subprocessorsLoaded = loadSubprocessorsFile(config.subprocessorsPath);
     if ("fatal" in subprocessorsLoaded) {
