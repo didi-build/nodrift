@@ -247,12 +247,28 @@ Example:
 
 **Manifest:** `{ "schemaVersion": 1, "files": [ { "path", "kind": "owned", "version", "sha256" } ] }`. v1 only creates **`owned`** entries; **`managed`** is reserved for v2 `sync`. Re-runs merge new entries for files created in that run (sorted by `path`).
 
+## Releasing
+
+**What ships:** the npm package is CLI-only (`nodrift` binary). The tarball includes `dist/`, `templates/`, `LICENSE`, `LICENSES/`, and `README.md` (see `files` in `package.json`). There is no public JavaScript API (`exports` exposes only `./package.json`).
+
+**Before the first release:** a maintainer must create `@didi-build/nodrift` on npm and configure [trusted publishing](https://docs.npmjs.com/trusted-publishers) for this repo with workflow file **`release.yml`**. That one-time bootstrap is outside this repository’s automation.
+
+**Routine release:**
+
+1. Open a PR that bumps `version` in `package.json` (and `package-lock.json` if needed).
+2. Merge to `main`, then tag the merge commit on `main` as `vX.Y.Z` (tag must match `package.json`).
+3. The **Release** workflow runs `npm run check`, `npm run package:check`, then **`npm stage publish`** via OIDC (no npm token in GitHub).
+4. Approve the staged release with 2FA: `npm stage list @didi-build/nodrift`, `npm stage view <id>`, `npm stage approve <id>`, or the **Staged Packages** tab on [npmjs.com](https://www.npmjs.com/).
+
+`npm run package:check` (also in CI) packs the package, enforces the file allowlist and size budget, installs the tarball in a temp project, and smoke-tests `nodrift init` / `check`.
+
 ## Commands (development)
 
 ```bash
 npm install          # install deps and git hooks (prepare)
 npm run build        # compile CLI to dist/
 npm run check        # format, lint, typecheck, test, secrets, placeholders, attribution
+npm run package:check   # pack allowlist + install smoke test (CI / before release)
 npm run test         # vitest
 npm run test:watch   # vitest watch mode
 npm run repo-settings   # dry-run / --apply / --verify GitHub repo settings

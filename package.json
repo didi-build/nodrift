@@ -1,7 +1,6 @@
 {
   "name": "@didi-build/nodrift",
   "version": "0.0.0",
-  "private": true,
   "description": "Keeps privacy docs from drifting from the code.",
   "license": "MIT",
   "author": "Didi Build",
@@ -22,6 +21,19 @@
     "d1"
   ],
   "type": "module",
+  "files": [
+    "dist",
+    "templates",
+    "LICENSE",
+    "LICENSES",
+    "README.md"
+  ],
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "nodrift": "dist/cli.js"
   },
@@ -34,7 +46,9 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "package:check": "node scripts/check-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "secrets": "secretlint \"**/*\"",

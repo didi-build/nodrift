@@ -448,7 +448,7 @@ Approved by the maintainer on **2026-10-19** (recorded here for implementers; th
 
 Approved by the maintainer on **2026-10-21** (CLI and `init` implementation, [DIDI-671](https://linear.app/didi-build/issue/DIDI-671)):
 
-9. **Build and `bin`** — TypeScript compiles `src/` to `dist/` (`tsconfig.build.json`, `npm run build`). The CLI entry is `dist/cli.js` with `#!/usr/bin/env node` via `package.json` `"bin": { "nodrift": "dist/cli.js" }`. The package stays `"private": true` until the publish ticket.
+9. **Build and `bin`** — TypeScript compiles `src/` to `dist/` (`tsconfig.build.json`, `npm run build`). The CLI entry is `dist/cli.js` with `#!/usr/bin/env node` via `package.json` `"bin": { "nodrift": "dist/cli.js" }`. Publishing uses an allowlisted `files` field, `package:check`, and staged OIDC release workflow `release.yml` (see [DIDI-673](https://linear.app/didi-build/issue/DIDI-673)).
 10. **`wrangler` config key** — The `wrangler` value is a **directory** path (default `.`). Check 2 resolves `wrangler.jsonc`, then `wrangler.json`, inside that directory.
 11. **`check` flow** — Load and validate the map once as a gate (fatal → exit `2`, findings → exit `1`, neither check runs). Optionally validate `subprocessors.yml` when the file exists. Run Check 1 and Check 2 independently; aggregate fatals and findings for exit codes.
 12. **CLI output streams** — `check` diagnostics go to **stdout**; usage and config errors go to **stderr**. The CLI sets `process.exitCode` and drains stdout/stderr before exit (no `process.exit` immediately after writes).
