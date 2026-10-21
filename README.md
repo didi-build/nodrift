@@ -259,8 +259,9 @@ Example:
 2. Merge to `main`, then tag the merge commit on `main` as `vX.Y.Z` (tag must match `package.json`).
 3. The **Release** workflow runs `npm run check`, `npm run package:check`, then **`npm stage publish`** via OIDC (no npm token in GitHub).
 4. Approve the staged release with 2FA: `npm stage list @didi-build/nodrift`, `npm stage view <id>`, `npm stage approve <id>`, or the **Staged Packages** tab on [npmjs.com](https://www.npmjs.com/).
+5. **Verify provenance** on the npm package page (Provenance badge) and in a temp project: `npm install @didi-build/nodrift@X.Y.Z` then `npm audit signatures`. If staged publishes do not carry provenance, use direct `npm publish` behind a GitHub environment approval instead (see ADR 0003 amendment 23).
 
-`npm run package:check` (also in CI) packs the package, enforces the file allowlist and size budget, installs the tarball in a temp project, and smoke-tests `nodrift init` / `check`.
+`npm run package:check` (also in CI) packs the package, enforces the file allowlist and size budget, installs the tarball in a temp project, and smoke-tests the installed `nodrift` bin (`init` / `check`).
 
 ## Commands (development)
 

@@ -16,10 +16,10 @@ import { gunzipSync } from "node:zlib";
 const packageRoot = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 /**
- * Packed tarball size limit (bytes). Measured packed size was ~35 KiB on 2026-10-21;
- * limit is ~2× headroom for dist growth.
+ * Packed tarball size limit (bytes). Measured packed size was 35,224 bytes on 2026-10-21;
+ * limit is ~2× headroom (~75 KiB).
  */
-export const MAX_PACKED_BYTES = 350_000;
+export const MAX_PACKED_BYTES = 75_000;
 
 /**
  * @param {string} relativePath path inside the package (no `package/` prefix)
@@ -129,13 +129,27 @@ function npmExecPath() {
   return npm;
 }
 
+/**
+ * @param {string[]} args
+ * @param {{ cwd?: string; env?: Record<string, string> }} [options]
+ */
 function runNpm(args, options) {
-  return execFileSync(process.execPath, [npmExecPath(), ...args], {
-    encoding: "utf8",
-    stdio: options?.stdio ?? "pipe",
-    cwd: options?.cwd ?? packageRoot,
-    env: { ...process.env, HUSKY: "0", ...options?.env },
-  });
+  try {
+    return execFileSync(process.execPath, [npmExecPath(), ...args], {
+      encoding: "utf8",
+      stdio: options?.stdio ?? "pipe",
+      cwd: options?.cwd ?? packageRoot,
+      env: { ...process.env, HUSKY: "0", ...options?.env },
+    });
+  } catch (err) {
+    const e = err;
+    const stderr = e.stderr?.toString?.() ?? e.stderr ?? "";
+    const stdout = e.stdout?.toString?.() ?? e.stdout ?? "";
+    const message = stderr || stdout || e.message;
+    const wrapped = new Error(message);
+    wrapped.cause = err;
+    throw wrapped;
+  }
 }
 
 function listTemplateRelPaths() {
@@ -150,41 +164,48 @@ function listTemplateRelPaths() {
   return out.sort();
 }
 
-function installedCliPath(projectDir) {
-  return resolve(
-    projectDir,
-    "node_modules",
-    "@didi-build",
-    "nodrift",
-    "dist",
-    "cli.js",
+/**
+ * @param {string} installRoot
+ * @param {string[]} args
+ * @param {string} [cwd]
+ */
+function runNodriftBinStatus(installRoot, args, cwd = installRoot) {
+  const prefix = resolve(installRoot);
+  const result = spawnSync(
+    process.execPath,
+    [
+      npmExecPath(),
+      "exec",
+      "--prefix",
+      prefix,
+      "--no-install",
+      "nodrift",
+      "--",
+      ...args,
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, NODE_NO_WARNINGS: "1", HUSKY: "0" },
+    },
   );
-}
-
-function runInstalledCli(installRoot, args, cwd = installRoot) {
-  const cli = installedCliPath(installRoot);
-  if (!existsSync(cli)) {
-    throw new Error(`installed CLI not found at ${cli}`);
+  const binPath = join(prefix, "node_modules", ".bin", "nodrift");
+  if (!existsSync(binPath) && !existsSync(`${binPath}.cmd`)) {
+    return {
+      status: 1,
+      stdout: result.stdout,
+      stderr: `nodrift bin shim missing under ${prefix}/node_modules/.bin`,
+    };
   }
-  return execFileSync(process.execPath, [cli, ...args], {
-    cwd,
-    encoding: "utf8",
-    env: { ...process.env, NODE_NO_WARNINGS: "1" },
-  });
-}
-
-function runInstalledCliStatus(installRoot, args, cwd = installRoot) {
-  const cli = installedCliPath(installRoot);
-  const result = spawnSync(process.execPath, [cli, ...args], {
-    cwd,
-    encoding: "utf8",
-    env: { ...process.env, NODE_NO_WARNINGS: "1" },
-  });
   return {
     status: result.status ?? 1,
     stdout: result.stdout,
     stderr: result.stderr,
   };
+}
+
+function failStep(stepName, detail) {
+  return { ok: false, message: `${stepName} failed: ${detail}` };
 }
 
 /**
@@ -194,71 +215,71 @@ function runInstalledCliStatus(installRoot, args, cwd = installRoot) {
  */
 export async function smokeTestInstalledPackage(archivePath, expectedVersion) {
   const installRoot = mkdtempSync(join(tmpdir(), "nodrift-install-"));
+  let dryRunDir;
+  let initDir;
   try {
     writeFileSync(
       join(installRoot, "package.json"),
       JSON.stringify({ name: "nodrift-smoke", private: true }),
     );
-    runNpm(["install", archivePath, "--no-audit", "--no-fund", "--ignore-scripts"], {
-      cwd: installRoot,
-    });
+    try {
+      runNpm(["install", archivePath, "--no-audit", "--no-fund", "--ignore-scripts"], {
+        cwd: installRoot,
+      });
+    } catch (err) {
+      return failStep("npm install", err.message);
+    }
 
-    const versionOut = runInstalledCli(installRoot, ["--version"]).trim();
+    const versionRun = runNodriftBinStatus(installRoot, ["--version"]);
+    if (versionRun.status !== 0) {
+      return failStep("nodrift --version", versionRun.stderr || versionRun.stdout);
+    }
+    const versionOut = versionRun.stdout.trim();
     if (versionOut !== expectedVersion) {
-      return {
-        ok: false,
-        message: `--version expected ${expectedVersion}, got ${versionOut}`,
-      };
+      return failStep(
+        "nodrift --version",
+        `expected ${expectedVersion}, got ${versionOut}`,
+      );
     }
-    const help = runInstalledCliStatus(installRoot, ["--help"], installRoot);
+
+    const help = runNodriftBinStatus(installRoot, ["--help"]);
     if (help.status !== 0) {
-      return { ok: false, message: "`nodrift --help` did not exit 0" };
+      return failStep("nodrift --help", help.stderr || help.stdout);
     }
 
-    const dryRunDir = mkdtempSync(join(tmpdir(), "nodrift-dry-"));
-    try {
-      const dry = runInstalledCliStatus(installRoot, ["init", "--dry-run"], dryRunDir);
-      if (dry.status !== 0) {
-        return {
-          ok: false,
-          message: `\`nodrift init --dry-run\` did not exit 0 (status ${dry.status}): ${dry.stderr || dry.stdout}`,
-        };
-      }
-      if (!dry.stdout.includes("would create")) {
-        return {
-          ok: false,
-          message: "`init --dry-run` output missing `would create` lines",
-        };
-      }
-      if (!dry.stdout.includes("docs/runbooks/breach-response.md")) {
-        return {
-          ok: false,
-          message: "`init --dry-run` did not list docs/runbooks/breach-response.md",
-        };
-      }
-    } finally {
-      rmSync(dryRunDir, { recursive: true, force: true });
+    dryRunDir = mkdtempSync(join(tmpdir(), "nodrift-dry-"));
+    const dry = runNodriftBinStatus(installRoot, ["init", "--dry-run"], dryRunDir);
+    if (dry.status !== 0) {
+      return failStep("nodrift init --dry-run", dry.stderr || dry.stdout);
+    }
+    if (!dry.stdout.includes("would create")) {
+      return failStep("nodrift init --dry-run", "output missing `would create` lines");
+    }
+    if (!dry.stdout.includes("docs/runbooks/breach-response.md")) {
+      return failStep(
+        "nodrift init --dry-run",
+        "did not list docs/runbooks/breach-response.md",
+      );
     }
 
-    const initDir = mkdtempSync(join(tmpdir(), "nodrift-init-"));
-    try {
-      const init = runInstalledCliStatus(installRoot, ["init"], initDir);
-      if (init.status !== 0) {
-        return { ok: false, message: "`nodrift init` did not exit 0" };
-      }
-      const check = runInstalledCliStatus(installRoot, ["check"], initDir);
-      if (check.status !== 0) {
-        return {
-          ok: false,
-          message: "`nodrift check` after init did not exit 0",
-        };
-      }
-    } finally {
-      rmSync(initDir, { recursive: true, force: true });
+    initDir = mkdtempSync(join(tmpdir(), "nodrift-init-"));
+    const init = runNodriftBinStatus(installRoot, ["init"], initDir);
+    if (init.status !== 0) {
+      return failStep("nodrift init", init.stderr || init.stdout);
+    }
+    const check = runNodriftBinStatus(installRoot, ["check"], initDir);
+    if (check.status !== 0) {
+      return failStep("nodrift check", check.stderr || check.stdout);
     }
 
     return { ok: true };
   } finally {
+    if (dryRunDir) {
+      rmSync(dryRunDir, { recursive: true, force: true });
+    }
+    if (initDir) {
+      rmSync(initDir, { recursive: true, force: true });
+    }
     rmSync(installRoot, { recursive: true, force: true });
   }
 }
@@ -266,36 +287,64 @@ export async function smokeTestInstalledPackage(archivePath, expectedVersion) {
 async function runPackageCheck() {
   const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
   const packDir = mkdtempSync(join(tmpdir(), "nodrift-pack-"));
+  let exitCode = 0;
   let archivePath;
+
   try {
-    runNpm(["pack", "--pack-destination", packDir], { cwd: packageRoot });
+    try {
+      runNpm(["pack", "--pack-destination", packDir], { cwd: packageRoot });
+    } catch (err) {
+      console.error(`package:check: npm pack failed: ${err.message}`);
+      exitCode = 1;
+      return;
+    }
+
     const archives = readdirSync(packDir).filter((f) => f.endsWith(".tgz"));
     if (archives.length !== 1) {
       console.error(`package:check: expected one .tgz, got ${archives.join(", ")}`);
-      process.exit(1);
+      exitCode = 1;
+      return;
     }
     archivePath = join(packDir, archives[0]);
     const size = statSync(archivePath).size;
     if (size > MAX_PACKED_BYTES) {
-      console.error(`package:check: tarball size ${size} exceeds ${MAX_PACKED_BYTES}`);
-      process.exit(1);
+      console.error(
+        `package:check: tarball size ${size} exceeds budget ${MAX_PACKED_BYTES}`,
+      );
+      exitCode = 1;
+      return;
     }
-    const tarballPaths = await listPackageTarballPaths(archivePath);
+
+    let tarballPaths;
+    try {
+      tarballPaths = await listPackageTarballPaths(archivePath);
+    } catch (err) {
+      console.error(`package:check: read tarball failed: ${err.message}`);
+      exitCode = 1;
+      return;
+    }
+
     const inspect = inspectTarballFileList(tarballPaths, listTemplateRelPaths());
     if (!inspect.ok) {
       console.error(`package:check: ${inspect.message}`);
-      process.exit(1);
+      exitCode = 1;
+      return;
+    }
+
+    const smoke = await smokeTestInstalledPackage(archivePath, pkg.version);
+    if (!smoke.ok) {
+      console.error(`package:check: ${smoke.message}`);
+      exitCode = 1;
     }
   } catch (err) {
-    console.error("package:check: pack/inspect failed:", err);
-    process.exit(1);
+    console.error(`package:check: ${err.message}`);
+    exitCode = 1;
+  } finally {
+    rmSync(packDir, { recursive: true, force: true });
   }
 
-  const smoke = await smokeTestInstalledPackage(archivePath, pkg.version);
-  rmSync(packDir, { recursive: true, force: true });
-  if (!smoke.ok) {
-    console.error(`package:check: ${smoke.message}`);
-    process.exit(1);
+  if (exitCode !== 0) {
+    process.exit(exitCode);
   }
 }
 
@@ -305,7 +354,7 @@ const isMain =
 
 if (isMain) {
   runPackageCheck().catch((err) => {
-    console.error(err);
-    process.exit(1);
+    console.error(`package:check: ${err.message}`);
+    process.exitCode = 1;
   });
 }
