@@ -3,8 +3,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,6 +32,22 @@ function tempRoot(): string {
   return root;
 }
 
+function listFilesRecursive(dir: string): string[] {
+  if (!existsSync(dir)) {
+    return [];
+  }
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      out.push(...listFilesRecursive(full));
+    } else {
+      out.push(full);
+    }
+  }
+  return out.sort();
+}
+
 const EMPTY_MAP = "schema_version: 1\nd1_tables: {}\nother_items: []\n";
 
 describe("nodrift init CLI", () => {
@@ -47,12 +65,21 @@ describe("nodrift init CLI", () => {
     const root = tempRoot();
     mkdirSync(join(root, "docs/privacy"), { recursive: true });
     writeFileSync(join(root, "docs/privacy/data-map.yml"), EMPTY_MAP, "utf8");
+    const before = listFilesRecursive(root);
     const result = runCli(root, ["init", "--dry-run"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("would skip docs/privacy/data-map.yml (exists)");
     expect(result.stdout).toContain("would create");
     expect(result.stdout).toContain("nodrift init: dry run");
     expect(existsSync(join(root, ".nodrift/manifest.json"))).toBe(false);
+    expect(listFilesRecursive(root)).toEqual(before);
+  });
+
+  it("dry-run on an empty project leaves the file tree unchanged", () => {
+    const root = tempRoot();
+    const before = listFilesRecursive(root);
+    runCli(root, ["init", "--dry-run"]);
+    expect(listFilesRecursive(root)).toEqual(before);
   });
 
   it("skips existing files on a second run", () => {
@@ -126,29 +153,42 @@ describe("nodrift init CLI", () => {
   it("merges manifest when re-creating a deleted owned file", () => {
     const root = tempRoot();
     runCli(root, ["init"]);
+    const beforeManifest = JSON.parse(
+      readFileSync(join(root, ".nodrift/manifest.json"), "utf8"),
+    ) as { files: Array<{ path: string; sha256: string }> };
+    const beforeByPath = new Map(
+      beforeManifest.files.map((entry) => [entry.path, entry.sha256]),
+    );
     rmSync(join(root, "SECURITY.md"));
     const second = runCli(root, ["init"]);
     expect(second.status).toBe(0);
+    expect(second.stdout).toContain("updated .nodrift/manifest.json");
     expect(existsSync(join(root, "SECURITY.md"))).toBe(true);
     const manifest = JSON.parse(
       readFileSync(join(root, ".nodrift/manifest.json"), "utf8"),
     ) as { files: Array<{ path: string; sha256: string }> };
-    const security = manifest.files.find((f) => f.path === "SECURITY.md");
-    expect(security?.sha256).toBe(
-      contentSha256(readFileSync(join(root, "SECURITY.md"), "utf8")),
-    );
+    for (const entry of manifest.files) {
+      if (entry.path === "SECURITY.md") {
+        expect(entry.sha256).toBe(
+          contentSha256(readFileSync(join(root, "SECURITY.md"), "utf8")),
+        );
+        continue;
+      }
+      expect(entry.sha256).toBe(beforeByPath.get(entry.path));
+    }
+    expect(manifest.files.length).toBe(beforeManifest.files.length);
   });
 
-  it("does not write an empty manifest when nothing was created", () => {
+  it("does not write a manifest when every owned file already exists and manifest is missing", () => {
     const root = tempRoot();
     runCli(root, ["init"]);
+    rmSync(join(root, ".nodrift/manifest.json"));
+    rmSync(join(root, ".nodrift"), { recursive: true, force: true });
     const second = runCli(root, ["init"]);
     expect(second.status).toBe(0);
-    expect(second.stdout).not.toContain("would create .nodrift/manifest.json");
-    const manifest = JSON.parse(
-      readFileSync(join(root, ".nodrift/manifest.json"), "utf8"),
-    ) as { files: unknown[] };
-    expect(manifest.files.length).toBeGreaterThan(0);
+    expect(second.stdout).not.toContain("created .nodrift/manifest.json");
+    expect(second.stdout).not.toContain("updated .nodrift/manifest.json");
+    expect(existsSync(join(root, ".nodrift/manifest.json"))).toBe(false);
   });
 
   it("exits 2 on corrupt manifest before writing anything", () => {
@@ -191,6 +231,9 @@ describe("nodrift init CLI", () => {
       "utf8",
     );
     const result = runCli(root, ["init"]);
+    expect(result.stdout).toContain(
+      "paste this privacy checklist into .github/pull_request_template.md:",
+    );
     expect(result.stdout).toContain("## Privacy checklist");
     expect(result.stdout).toContain(
       "The privacy page and the runbooks still match what the code does",
@@ -251,6 +294,28 @@ describe("nodrift init CLI", () => {
     expect(breach).toContain("real risk of significant harm");
     expect(breach).toContain("gazette.gc.ca");
     expect(breach).toContain("not legal advice");
+    expect(breach).toContain("Unless otherwise prohibited by law");
+    expect(breach).toContain(
+      "Indirect notification is permitted only when direct notification",
+    );
+    expect(breach).toContain("s. 5(1)");
+    expect(breach).toContain("s. 5(2)");
+    expect(breach).toContain(
+      "notify any government institutions or organizations that you believe can reduce the risk of harm",
+    );
+    expect(breach).toContain("organization that processes your payments");
+    expect(breach).not.toContain("prohibits direct notification");
+    expect(breach).toContain(
+      "https://www.priv.gc.ca/en/privacy-topics/privacy-for-businesses/privacy-breaches-at-your-business/gd_pb_201810/",
+    );
+    expect(breach).toContain(
+      "https://www.priv.gc.ca/en/report-a-concern/report-a-privacy-breach-at-your-organization/report-a-privacy-breach-at-your-business/",
+    );
+    const record = readFileSync(
+      join(root, "docs/privacy/breach-record-template.md"),
+      "utf8",
+    );
+    expect(record).toContain("**Date or estimated date the breach occurred (UTC):**");
     const security = readFileSync(join(root, "SECURITY.md"), "utf8");
     expect(security).toContain("TODO: contact email");
     expect(security).not.toContain("security@example.com");

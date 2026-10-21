@@ -5,6 +5,7 @@ Copy this file for each incident (do not edit this template in place).
 ## Identification
 
 - **Incident ID:**
+- **Date or estimated date the breach occurred (UTC):**
 - **Date breach was determined (UTC):**
 - **Date discovered (UTC):**
 - **Incident lead:**

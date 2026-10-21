@@ -8,6 +8,10 @@ import { getPackageVersion, printUsageHint, USAGE } from "./cli/usage.js";
 import { runInit } from "./init/run-init.js";
 
 async function main(): Promise<void> {
+  if (process.env.NODRIFT_TEST_THROW === "1") {
+    throw new Error("injected test failure");
+  }
+
   const parsed = parseCli(process.argv.slice(2));
   if (!parsed.ok) {
     printUsageHint(process.stderr);

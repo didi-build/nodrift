@@ -27,6 +27,7 @@ export type InitPlanResult =
       ok: true;
       items: InitPlanItem[];
       privacyChecklistBlock: string | null;
+      privacyChecklistTargetPath: string | null;
     }
   | { ok: false; fatal: FatalError };
 
@@ -162,9 +163,11 @@ export function planInit(
   }
 
   let privacyChecklistBlock: string | null = null;
+  let privacyChecklistTargetPath: string | null = null;
   const existingPr = findExistingPrTemplate(repoRoot);
   if (existingPr) {
     items.push({ action: "skip", relativePath: existingPr });
+    privacyChecklistTargetPath = existingPr;
     privacyChecklistBlock = readPackageTemplate(
       INIT_MODULE_URL,
       "privacy-checklist-block.txt",
@@ -198,7 +201,7 @@ export function planInit(
     items.push({ action: "write-manifest", content: manifestJson });
   }
 
-  return { ok: true, items, privacyChecklistBlock };
+  return { ok: true, items, privacyChecklistBlock, privacyChecklistTargetPath };
 }
 
 function writeExclusive(path: string, content: string): void {
@@ -256,7 +259,9 @@ export function runInit(
           writeFileSync(manifestPath, item.content, { encoding: "utf8", flag: "wx" });
         }
         written.push(MANIFEST_REL);
-        lines.push(`created ${MANIFEST_REL}`);
+        lines.push(
+          manifestExisted ? `updated ${MANIFEST_REL}` : `created ${MANIFEST_REL}`,
+        );
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         if (written.length > 0) {
@@ -290,7 +295,10 @@ export function runInit(
     }
   }
 
-  if (planned.privacyChecklistBlock) {
+  if (planned.privacyChecklistBlock && planned.privacyChecklistTargetPath) {
+    lines.push(
+      `paste this privacy checklist into ${planned.privacyChecklistTargetPath}:`,
+    );
     lines.push(planned.privacyChecklistBlock.trimEnd());
   }
 

@@ -13,18 +13,18 @@ Under PIPEDA, assess whether the breach creates a **real risk of significant har
 
 ## 3. Report to the Privacy Commissioner of Canada
 
-When the breach creates a real risk of significant harm, report it to the Office of the Privacy Commissioner of Canada **as soon as feasible after the organization determines that the breach occurred**.
+When the breach creates a real risk of significant harm, report it to the Office of the Privacy Commissioner of Canada **as soon as feasible after the organization determines that the breach occurred** (see OPC guidance, Part 3; Breach of Security Safeguards Regulations, s. 4).
 
-- OPC guidance: [What you need to know about mandatory reporting of breaches of security safeguards](https://www.priv.gc.ca/en/privacy-topics/business-privacy/privacy-breaches-at-your-business/gd_pb_201810/)
-- Breach reporting form: [Report a privacy breach at your organization](https://www.priv.gc.ca/en/report-a-concern/report-a-privacy-breach-at-your-organization/)
+- OPC guidance (Part 3): [What you need to know about mandatory reporting of breaches of security safeguards](https://www.priv.gc.ca/en/privacy-topics/privacy-for-businesses/privacy-breaches-at-your-business/gd_pb_201810/)
+- Breach report form: [Report a privacy breach at your business](https://www.priv.gc.ca/en/report-a-concern/report-a-privacy-breach-at-your-organization/report-a-privacy-breach-at-your-business/)
 
 ## 4. Notify affected individuals
 
-When there is a real risk of significant harm, notify affected individuals **as soon as feasible** after you determine the breach occurred, unless law prohibits direct notification.
+Unless otherwise prohibited by law, notify affected individuals as soon as feasible after you determine that a breach creating a real risk of significant harm has occurred. Notify them directly (in person, by telephone, mail, email, or another form of communication a reasonable person would consider appropriate). Indirect notification is permitted only when direct notification would likely cause further harm to the individual, would likely cause undue hardship for the organization, or when you do not have contact information for the individual (Breach of Security Safeguards Regulations, s. 5(1)); it must then be given by public communication or a similar measure that could reasonably be expected to reach the affected individuals (s. 5(2)). See OPC guidance, Part 4.
 
 ## 5. Notify other organizations
 
-Notify other organizations that may be able to reduce harm (for example financial institutions, service providers, or partners) when appropriate.
+When you notify an individual, you must also notify any government institutions or organizations that you believe can reduce the risk of harm that could result from the breach or mitigate that harm (OPC guidance, Part 4). Examples from the OPC include law enforcement (when there is an attack on your computer system and you believe it may be able to reduce or mitigate the harm) and the organization that processes your payments (for a breach affecting payment card information).
 
 ## 6. Keep breach records
 

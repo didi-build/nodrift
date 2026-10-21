@@ -20,10 +20,21 @@ export function contentSha256(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
+/** Code-unit path order (not locale-sensitive). */
+export function compareManifestPaths(a: string, b: string): number {
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
+}
+
 export function buildManifest(entries: ManifestFileEntry[]): NodriftManifest {
   return {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
-    files: [...entries].sort((a, b) => a.path.localeCompare(b.path)),
+    files: [...entries].sort((a, b) => compareManifestPaths(a.path, b.path)),
   };
 }
 
@@ -35,7 +46,7 @@ export function mergeManifestEntries(
   for (const entry of updates) {
     byPath.set(entry.path, entry);
   }
-  return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+  return [...byPath.values()].sort((a, b) => compareManifestPaths(a.path, b.path));
 }
 
 export type LoadManifestResult =

@@ -14,11 +14,24 @@ export type CliRun = {
   stderr: string;
 };
 
-export function runCli(cwd: string, args: string[]): CliRun {
+export function scaffoldMinimalCheckProject(root: string): void {
+  mkdirSync(join(root, "docs/privacy"), { recursive: true });
+  writeFileSync(
+    join(root, "docs/privacy/data-map.yml"),
+    "schema_version: 1\nd1_tables: {}\nother_items: []\n",
+    "utf8",
+  );
+}
+
+export function runCli(
+  cwd: string,
+  args: string[],
+  extraEnv?: Record<string, string>,
+): CliRun {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, NODE_NO_WARNINGS: "1" },
+    env: { ...process.env, NODE_NO_WARNINGS: "1", ...extraEnv },
   });
   return {
     status: result.status,
