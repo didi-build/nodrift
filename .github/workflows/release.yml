@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'didi-build/nodrift'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - name: Ensure npm supports staged publishing
+        run: |
+          set -euo pipefail
+          need_major=11
+          need_minor=15
+          need_patch=0
+          version="$(npm --version)"
+          IFS=. read -r major minor patch <<<"${version%%-*}"
+          if [ "${major}" -lt "${need_major}" ] || { [ "${major}" -eq "${need_major}" ] && [ "${minor}" -lt "${need_minor}" ]; }; then
+            npm install -g "npm@^11.15.0"
+          fi
+          version="$(npm --version)"
+          IFS=. read -r major minor patch <<<"${version%%-*}"
+          if [ "${major}" -lt "${need_major}" ] || { [ "${major}" -eq "${need_major}" ] && [ "${minor}" -lt "${need_minor}" ]; }; then
+            echo "npm ${version} is below required 11.15.0"
+            exit 1
+          fi
+      - name: Verify release tag
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version v${version}"
+            exit 1
+          fi
+          git fetch origin main
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+      - name: npm ci
+        run: HUSKY=0 npm ci
+      - name: npm run check
+        run: npm run check
+      - name: npm run package:check
+        run: npm run package:check
+      - name: Stage npm release
+        run: npm stage publish
+      - name: Maintainer approval instructions
+        run: |
+          set -euo pipefail
+          {
+            echo "## Staged npm release"
+            echo ""
+            echo "This workflow submitted **@didi-build/nodrift** for staged publishing. The version is **not** public until a maintainer approves it with 2FA."
+            echo ""
+            echo "1. List staged packages: \`npm stage list @didi-build/nodrift\`"
+            echo "2. Inspect a stage: \`npm stage view <id>\`"
+            echo "3. Approve (2FA): \`npm stage approve <id>\`"
+            echo ""
+            echo "Or use the **Staged Packages** tab on [npmjs.com](https://www.npmjs.com/)."
+          } >> "$GITHUB_STEP_SUMMARY"

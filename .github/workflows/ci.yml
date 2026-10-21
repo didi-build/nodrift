@@ -85,6 +85,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: npm run verify-action-pins
 
+  package-check:
+    name: package-check
+    if: github.repository == 'didi-build/nodrift'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: npm ci
+        run: HUSKY=0 npm ci
+      - name: npm run package:check
+        run: npm run package:check
+
   check:
     name: check
     runs-on: ubuntu-latest
