@@ -1,8 +1,13 @@
 import type { ExpandedEntry } from "../data-map/types.js";
 import { finding, type Finding } from "../findings.js";
 import type { CollectedBinding } from "./types.js";
-import type { MultipleD1InSection } from "./extract-bindings.js";
+import type { DurableObjectBinding, MultipleD1InSection } from "./extract-bindings.js";
 import type { BindingKind, BindingLocation } from "./types.js";
+import {
+  ADR_0003_UNSUPPORTED_WRANGLER_URL,
+  formatBindingNameList,
+  unsupportedWranglerFix,
+} from "./unsupported-wrangler.js";
 
 function compareCodeUnits(a: string, b: string): number {
   if (a < b) {
@@ -129,17 +134,31 @@ export function compareBindingsToMap(
   covered: ReadonlySet<string>,
   configFile: string,
   multipleD1InSection: readonly MultipleD1InSection[],
+  durableObjectBindings: readonly DurableObjectBinding[],
 ): Finding[] {
   const findings: Finding[] = [];
 
   for (const multi of multipleD1InSection) {
+    const names = formatBindingNameList(multi.bindingNames);
     findings.push(
       finding(
         configFile,
         multi.d1ArrayPath,
         "multiple_d1_databases",
-        `section \`${multi.section}\` declares ${multi.bindingCount} D1 database bindings; v1 supports one D1 database per section`,
-        "declare at most one `d1_databases` entry per Wrangler config section",
+        `bindings ${names} in section \`${multi.section}\` are not supported yet by nodrift (multiple D1 databases in one Wrangler section); see ADR 0003: ${ADR_0003_UNSUPPORTED_WRANGLER_URL}`,
+        unsupportedWranglerFix(),
+      ),
+    );
+  }
+
+  for (const durable of durableObjectBindings) {
+    findings.push(
+      finding(
+        configFile,
+        durable.path,
+        "durable_objects",
+        `binding \`${durable.name}\` (Durable Object) in section \`${durable.section}\` is not supported yet by nodrift; see ADR 0003: ${ADR_0003_UNSUPPORTED_WRANGLER_URL}`,
+        unsupportedWranglerFix(),
       ),
     );
   }

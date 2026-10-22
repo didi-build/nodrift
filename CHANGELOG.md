@@ -54,14 +54,15 @@ Ignored by default: `sqlite_*`, `_cf_*`, `d1_migrations`, plus `ignoreTables`.
 
 Reads `wrangler.jsonc` or `wrangler.json` under the configured `wrangler` directory.
 
-| Code / situation                          | Meaning                                                                        | How to fix                                                                  |
-| ----------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `binding_not_in_map`                      | D1, R2, KV, queue producer, or Images binding not on any `other_items.binding` | Add an `other_items` row listing the binding name (snippet in the message). |
-| `multiple_d1_databases`                   | More than one `d1_databases` entry in one Wrangler section                     | Use one D1 database per section in v1, or consolidate bindings.             |
-| `wrangler.toml` only                      | No JSON/JSONC config                                                           | Use `wrangler.jsonc` or `wrangler.json`.                                    |
-| Map lists `binding:` but no Wrangler JSON | Bindings declared without config file                                          | Add Wrangler JSON or remove unused `binding:` entries.                      |
+| Code / situation                          | Meaning                                                                        | How to fix                                                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `binding_not_in_map`                      | D1, R2, KV, queue producer, or Images binding not on any `other_items.binding` | Add an `other_items` row listing the binding name (snippet in the message).                |
+| `multiple_d1_databases`                   | More than one `d1_databases` entry in one Wrangler section                     | Remove extra D1 bindings until nodrift supports multiple databases per section (ADR 0003). |
+| `durable_objects`                         | Any `durable_objects.bindings` entry                                           | Remove Durable Object bindings until nodrift supports them (ADR 0003).                     |
+| `wrangler.toml` only                      | No JSON/JSONC config                                                           | Use `wrangler.jsonc` or `wrangler.json`.                                                   |
+| Map lists `binding:` but no Wrangler JSON | Bindings declared without config file                                          | Add Wrangler JSON or remove unused `binding:` entries.                                     |
 
-Not checked in v1: **stale `binding:` entries** — a map name that matches no Wrangler binding is not reported (Check 2 only checks Wrangler bindings against the map, not the reverse); also outside vendors, `services`, `assets`, `vars`, `ratelimits`, `routes`, and Durable Objects.
+Not checked in v1: **stale `binding:` entries** — a map name that matches no Wrangler binding is not reported (Check 2 only checks Wrangler bindings against the map, not the reverse); also outside vendors, `services`, `assets`, `vars`, `ratelimits`, and `routes`. **Durable Objects** and **multiple D1 databases per section** fail `check` as unsupported configs (see ADR 0003).
 
 #### Subprocessors (`subprocessors.yml`)
 

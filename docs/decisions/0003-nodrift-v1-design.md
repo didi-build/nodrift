@@ -426,10 +426,12 @@ Production `dependencies` (exact-pinned in `package.json` when implementation la
 
 These are **not** locked in [DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown). The ADR keeps the locked decision above; discuss before changing.
 
-| Topic                          | Locked v1 decision                       | Proposal                                                                                            |
-| ------------------------------ | ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Multiple D1 databases**      | One migrations dir + one `d1_tables` map | Add first-class multi-database support (per-binding migrations + map sections) in v1.1 or v2.       |
-| **Durable Objects in Check 2** | D1, R2, KV, queues, Images only          | Also require map coverage for `durable_objects` bindings with explicit `binding:` on `other_items`. |
+| Topic                          | Locked v1 decision                       | Proposal                                                                                            | Status                                                                                                    |
+| ------------------------------ | ---------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Multiple D1 databases**      | One migrations dir + one `d1_tables` map | Add first-class multi-database support (per-binding migrations + map sections) in v1.1 or v2.       | **Deferred (2026-10-22)** — no current consumer repo uses more than one D1 database per Wrangler section. |
+| **Durable Objects in Check 2** | D1, R2, KV, queues, Images only          | Also require map coverage for `durable_objects` bindings with explicit `binding:` on `other_items`. | **Deferred (2026-10-22)** — no current consumer repo declares `durable_objects` bindings.                 |
+
+**Interim rule (v1):** `nodrift check` **fails** (exit `1`) when the Wrangler config declares **more than one** `d1_databases` entry in any single section (top level, `env.<name>`, or `previews`), or **any** `durable_objects` binding in those sections. Diagnostics name the binding(s) and Wrangler file, state that the configuration is **not supported yet by nodrift**, and link this section. There is **no bypass flag** in v1.
 
 ---
 
@@ -457,6 +459,10 @@ Approved by the maintainer on **2026-10-21** (CLI and `init` implementation, [DI
 15. **PR template detection** — Case-insensitive match for `.github/pull_request_template.md`, root `pull_request_template.md`, `docs/pull_request_template.md`, or any **file** under `.github/PULL_REQUEST_TEMPLATE/` (an empty directory does not count). When a template already exists, `init` prints the privacy checklist block instead of writing a template.
 16. **Manifest** — `.nodrift/manifest.json` shape: `{ "schemaVersion": 1, "files": [ { "path", "kind": "owned", "version", "sha256" } ] }`. Written or merged only when at least one owned file is created; corrupt or unsupported manifests fail before any write.
 17. **Templates** — Package-root `templates/` plain files (LF); `init` copies them without substitution. Breach templates record PIPEDA breach-record and reporting facts with the Canada Gazette SOR/2018-64 s. 6(1) link ([gazette](https://gazette.gc.ca/rp-pr/p2/2018/2018-04-18/html/sor-dors64-eng.html)), OPC breach guidance ([gd_pb_201810](https://www.priv.gc.ca/en/privacy-topics/privacy-for-businesses/privacy-breaches-at-your-business/gd_pb_201810/)), and breach report form ([report-a-privacy-breach-at-your-business](https://www.priv.gc.ca/en/report-a-concern/report-a-privacy-breach-at-your-organization/report-a-privacy-breach-at-your-business/)); each template ends with a one-line skeleton / not-legal-advice note.
+
+Approved by the maintainer on **2026-10-22** ([DIDI-702](https://linear.app/didi-build/issue/DIDI-702), [DIDI-712](https://linear.app/didi-build/issue/DIDI-712)):
+
+24. **Unsupported Wrangler configurations** — Both [proposals above](#proposed-changes-for-maintainer-review) are **deferred** because no current repo uses them. Until first-class support ships, `check` fails with `multiple_d1_databases` or `durable_objects` findings (exit `1`) rather than silently passing; messages name bindings, say **not supported yet by nodrift**, and link ADR 0003. No opt-out in v1.
 
 Approved by the maintainer on **2026-10-21** (publish pipeline, [DIDI-673](https://linear.app/didi-build/issue/DIDI-673)):
 

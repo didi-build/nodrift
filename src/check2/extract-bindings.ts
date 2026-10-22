@@ -34,6 +34,13 @@ export type MultipleD1InSection = {
   /** Path to the section's `d1_databases` array, e.g. `env.staging.d1_databases`. */
   d1ArrayPath: string;
   bindingCount: number;
+  bindingNames: string[];
+};
+
+export type DurableObjectBinding = {
+  name: string;
+  section: string;
+  path: string;
 };
 
 function collectFromSection(
@@ -42,8 +49,10 @@ function collectFromSection(
   pathPrefix: string,
   bindings: Map<string, MutableBinding>,
   multipleD1: MultipleD1InSection[],
+  durableObjectBindings: DurableObjectBinding[],
 ): void {
   let d1BindingCount = 0;
+  const d1BindingNames: string[] = [];
 
   const d1 = sectionObj.d1_databases;
   if (Array.isArray(d1)) {
@@ -56,6 +65,7 @@ function collectFromSection(
       const read = readBindingString(entry.binding, path);
       if (read.ok) {
         d1BindingCount += 1;
+        d1BindingNames.push(read.binding);
         addBinding(bindings, read.binding, "d1", sectionLabel, path);
       }
     }
@@ -64,6 +74,7 @@ function collectFromSection(
         section: sectionLabel,
         d1ArrayPath: `${pathPrefix}d1_databases`,
         bindingCount: d1BindingCount,
+        bindingNames: d1BindingNames,
       });
     }
   }
@@ -124,6 +135,28 @@ function collectFromSection(
       addBinding(bindings, read.binding, "images", sectionLabel, path);
     }
   }
+
+  const durableObjectsBlock = sectionObj.durable_objects;
+  if (isRecord(durableObjectsBlock)) {
+    const doBindings = durableObjectsBlock.bindings;
+    if (Array.isArray(doBindings)) {
+      for (let i = 0; i < doBindings.length; i++) {
+        const entry = doBindings[i];
+        if (!isRecord(entry)) {
+          continue;
+        }
+        const path = `${pathPrefix}durable_objects.bindings[${i}].name`;
+        const read = readBindingString(entry.name, path);
+        if (read.ok) {
+          durableObjectBindings.push({
+            name: read.binding,
+            section: sectionLabel,
+            path,
+          });
+        }
+      }
+    }
+  }
 }
 
 function addBinding(
@@ -163,6 +196,7 @@ function sortLocations(locations: BindingLocation[]): BindingLocation[] {
 export type ExtractBindingsResult = {
   bindings: CollectedBinding[];
   multipleD1InSection: MultipleD1InSection[];
+  durableObjectBindings: DurableObjectBinding[];
 };
 
 /**
@@ -173,8 +207,9 @@ export function extractBindings(
 ): ExtractBindingsResult {
   const map = new Map<string, MutableBinding>();
   const multipleD1: MultipleD1InSection[] = [];
+  const durableObjectBindings: DurableObjectBinding[] = [];
 
-  collectFromSection(config, "top level", "", map, multipleD1);
+  collectFromSection(config, "top level", "", map, multipleD1, durableObjectBindings);
 
   const env = config.env;
   if (isRecord(env)) {
@@ -198,13 +233,27 @@ export function extractBindings(
     }
     envBlocks.sort((a, b) => compareCodeUnits(a.name, b.name));
     for (const { name, block } of envBlocks) {
-      collectFromSection(block, `env.${name}`, `env.${name}.`, map, multipleD1);
+      collectFromSection(
+        block,
+        `env.${name}`,
+        `env.${name}.`,
+        map,
+        multipleD1,
+        durableObjectBindings,
+      );
     }
   }
 
   const previews = config.previews;
   if (isRecord(previews)) {
-    collectFromSection(previews, "previews", "previews.", map, multipleD1);
+    collectFromSection(
+      previews,
+      "previews",
+      "previews.",
+      map,
+      multipleD1,
+      durableObjectBindings,
+    );
   }
 
   const bindings: CollectedBinding[] = [];
@@ -222,6 +271,13 @@ export function extractBindings(
   }
 
   multipleD1.sort((a, b) => compareCodeUnits(a.section, b.section));
+  durableObjectBindings.sort((a, b) => {
+    const bySection = compareCodeUnits(a.section, b.section);
+    if (bySection !== 0) {
+      return bySection;
+    }
+    return compareCodeUnits(a.name, b.name);
+  });
 
-  return { bindings, multipleD1InSection: multipleD1 };
+  return { bindings, multipleD1InSection: multipleD1, durableObjectBindings };
 }
