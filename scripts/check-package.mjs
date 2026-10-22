@@ -146,15 +146,35 @@ export function packageCheckExitCode(input) {
   return 0;
 }
 
-function resolveMaxPackedBytes(overrides) {
+/**
+ * @param {{ maxPackedBytes?: number }} [overrides]
+ * @returns {{ ok: true; value: number } | { ok: false; message: string }}
+ */
+export function resolveMaxPackedBytes(overrides) {
+  const cap = (n) => Math.min(Math.floor(n), MAX_PACKED_BYTES);
+
   if (overrides?.maxPackedBytes !== undefined) {
-    return overrides.maxPackedBytes;
+    const n = overrides.maxPackedBytes;
+    if (!Number.isFinite(n) || n <= 0) {
+      return {
+        ok: false,
+        message: `invalid package size budget override: ${String(n)}`,
+      };
+    }
+    return { ok: true, value: cap(n) };
   }
   const fromEnv = process.env.NODRIFT_PACKAGE_CHECK_MAX_BYTES;
   if (fromEnv !== undefined && fromEnv !== "") {
-    return Number(fromEnv);
+    const parsed = Number(fromEnv);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return {
+        ok: false,
+        message: `invalid NODRIFT_PACKAGE_CHECK_MAX_BYTES: ${fromEnv}`,
+      };
+    }
+    return { ok: true, value: cap(parsed) };
   }
-  return MAX_PACKED_BYTES;
+  return { ok: true, value: MAX_PACKED_BYTES };
 }
 
 function npmExecPath() {
@@ -321,13 +341,31 @@ export async function smokeTestInstalledPackage(archivePath, expectedVersion) {
 }
 
 /**
- * @param {{ maxPackedBytes?: number; skipSmoke?: boolean; ignorePackScripts?: boolean }} [overrides]
+ * @param {{
+ *   maxPackedBytes?: number;
+ *   skipSmoke?: boolean;
+ *   ignorePackScripts?: boolean;
+ *   runNpm?: (args: string[], options?: { cwd?: string; env?: Record<string, string> }) => void;
+ *   listPackArchives?: (packDir: string) => string[];
+ *   listPackageTarballPaths?: (archivePath: string) => Promise<string[]>;
+ * }} [overrides]
  *   ignorePackScripts skips prepack (vitest only; dist comes from globalSetup).
  * @returns {Promise<0 | 1>}
  */
 export async function runPackageCheck(overrides = {}) {
-  const maxPackedBytes = resolveMaxPackedBytes(overrides);
+  const resolvedMax = resolveMaxPackedBytes(overrides);
+  if (!resolvedMax.ok) {
+    console.error(`package:check: ${resolvedMax.message}`);
+    return 1;
+  }
+  const maxPackedBytes = resolvedMax.value;
   const skipSmoke = overrides.skipSmoke === true;
+  const runNpmFn = overrides.runNpm ?? runNpm;
+  const listPackArchivesFn =
+    overrides.listPackArchives ??
+    ((packDir) => readdirSync(packDir).filter((f) => f.endsWith(".tgz")));
+  const listTarballPathsFn =
+    overrides.listPackageTarballPaths ?? listPackageTarballPaths;
   const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
   const packDir = mkdtempSync(join(tmpdir(), "nodrift-pack-"));
   const packArgs = ["pack", "--pack-destination", packDir];
@@ -340,13 +378,13 @@ export async function runPackageCheck(overrides = {}) {
 
   try {
     try {
-      runNpm(packArgs, { cwd: packageRoot });
+      runNpmFn(packArgs, { cwd: packageRoot });
     } catch (err) {
       console.error(`package:check: npm pack failed: ${err.message}`);
       return 1;
     }
 
-    const archives = readdirSync(packDir).filter((f) => f.endsWith(".tgz"));
+    const archives = listPackArchivesFn(packDir);
     if (archives.length !== 1) {
       console.error(`package:check: expected one .tgz, got ${archives.join(", ")}`);
       return 1;
@@ -356,7 +394,7 @@ export async function runPackageCheck(overrides = {}) {
 
     let tarballPaths;
     try {
-      tarballPaths = await listPackageTarballPaths(archivePath);
+      tarballPaths = await listTarballPathsFn(archivePath);
     } catch (err) {
       console.error(`package:check: read tarball failed: ${err.message}`);
       return 1;
@@ -401,10 +439,10 @@ const isMain =
 if (isMain) {
   runPackageCheck()
     .then((code) => {
-      process.exit(code);
+      process.exitCode = code;
     })
     .catch((err) => {
       console.error(`package:check: ${err.message}`);
-      process.exit(1);
+      process.exitCode = 1;
     });
 }
