@@ -11,7 +11,83 @@ Created from [Launchpad](https://github.com/didi-build/launchpad) by Didi Build 
 
 <!-- launchpad-attribution:end -->
 
-## Layout
+## Install
+
+Requires **Node.js `>=22.13.0`** (`node:sqlite` for Check 1). In a consumer repo, pin an exact version and run:
+
+```bash
+npm install --save-dev @didi-build/nodrift@0.1.0
+npx nodrift init    # once: scaffold owned privacy files (safe to re-run)
+npx nodrift check   # in CI and locally
+```
+
+One-off without adding to `package.json`: `npx @didi-build/nodrift@<version> check`.
+
+See [How a version bump works](./docs/version-bump.md) and [CHANGELOG.md](./CHANGELOG.md) when upgrading.
+
+## Default layout in your repo
+
+Zero config assumes paths like [we-met](https://github.com/didi-build/we-met):
+
+| Path                                | Role                                            |
+| ----------------------------------- | ----------------------------------------------- |
+| `docs/privacy/data-map.yml`         | Grouped privacy inventory (`schema_version: 1`) |
+| `docs/privacy/subprocessors.yml`    | Vendor list (validated when present)            |
+| `migrations/*.sql`                  | D1 migrations replayed for Check 1              |
+| `wrangler.jsonc` or `wrangler.json` | Wrangler config directory (default: repo root)  |
+| `nodrift.config.json`               | Optional path overrides (strict JSON)           |
+| `.nodrift/manifest.json`            | Written by `init` when it creates files         |
+
+`init` may also add runbooks, `SECURITY.md`, and a PR template — see [**`init`**](#init) below.
+
+## What `check` verifies (v1)
+
+| Step              | Verifies                                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Map loader**    | YAML shape, `schema_version`, personal-data rules, required fields, unknown keys                                             |
+| **Check 1**       | Every D1 column from applied migrations appears in `d1_tables`, and map tables/columns exist in the schema (both directions) |
+| **Check 2**       | Every in-scope Wrangler data-store binding (D1, R2, KV, queue producers, Images) is listed on an `other_items` `binding:`    |
+| **Subprocessors** | `subprocessors.yml` shape when the configured file exists                                                                    |
+
+## What `check` does not cover (v1)
+
+- New **outside vendors** (email, analytics, etc.) — only Cloudflare bindings appear in Wrangler; use the PR privacy checklist.
+- **PII in logs**, **third-party scripts**, policy generation, `wrangler.toml`-only projects.
+- **Stale** `binding:` entries (a typo in the map does not fail if the real binding is still uncovered).
+- **Multiple D1 databases** per Wrangler section (reported as a finding; v1 assumes one migrations dir and one `d1_tables` block).
+- Toggling checks off in config — all v1 checks always run when inputs exist.
+
+## v1 and v2
+
+|          | **v1 (this release)**                                      | **v2 (planned)**                            |
+| -------- | ---------------------------------------------------------- | ------------------------------------------- |
+| Commands | `init`, `check`; `sync` reserved (exits `2`)               | `sync` for **managed** template files       |
+| Checks   | Map vs migrations; data stores vs map; subprocessors shape | PII-in-logs, third-party scripts, more      |
+| `init`   | Creates **owned** files only; manifest records `kind`      | May add **managed** files updated by `sync` |
+| Output   | Human-readable stdout                                      | `--json` planned                            |
+
+Design detail: [ADR 0003](./docs/decisions/0003-nodrift-v1-design.md).
+
+## Owned vs managed files
+
+- **`owned`** — created by `init`, edited by your team; never overwritten by nodrift v1.
+- **`managed`** — reserved for v2: kit-owned templates that `sync` will regenerate from the package.
+
+`.nodrift/manifest.json` stores `path`, `kind`, package `version` at creation time, and `sha256` of the original content. A **version bump** updates the CLI and checks in `node_modules`; it does not rewrite your owned docs. After a minor release with new checks, fix failures on the Dependabot PR using messages and [CHANGELOG.md](./CHANGELOG.md).
+
+## Versioning
+
+`@didi-build/nodrift` uses **SemVer**:
+
+- **Patch** — fixes and clearer diagnostics; no new failures on unchanged repos.
+- **Minor** — new checks or optional scaffolds/config; new checks **fail CI** until fixed (changelog lists remedies).
+- **Major** — breaking `schema_version`, or removed/renamed commands, flags, config keys, or exit codes. Package major **N** supports map **`schema_version` N** only.
+
+Publish **`0.x`** until [we-met adoption](https://linear.app/didi-build/issue/DIDI-651); **`1.0.0`** after that. Deprecations warn for one minor before removal. Pin exact versions in consumer repos.
+
+**Consumer workflow:** [How a version bump works](./docs/version-bump.md). **Release history:** [CHANGELOG.md](./CHANGELOG.md).
+
+## Layout (this repository)
 
 | Path                                                                             | Why it exists                                                                             |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -46,14 +122,14 @@ Privacy inventory lives in **`docs/privacy/data-map.yml`** (grouped format, `sch
 
 **Loader API** (`src/`)
 
-| Function                                                                             | Role                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `parseDataMap(text, filePath)`                                                       | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                             |
-| `expandDataMap(map)`                                                                 | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing.     |
-| `parseSubprocessors(text, filePath)`                                                 | Light shape check for `subprocessors.yml`.                                                                                                                                |
-| `loadDataMapFile` / `loadSubprocessorsFile`                                          | Thin `readFileSync` wrappers around the parsers.                                                                                                                          |
-| `checkMapVsMigrations({ mapFilePath, migrationsDir, ignoreTables?, schemaReader? })` | Check 1 library: load the map, replay `*.sql` migrations in memory, compare `d1_tables` to the effective schema (no CLI wiring yet).                                      |
-| `checkDataStoresVsMap({ mapFilePath, wranglerDir })`                                 | Check 2 library: parse Wrangler JSON/JSONC in `wranglerDir`, collect in-scope data-store bindings, and verify each is listed on an `other_items` `binding:` (no CLI yet). |
+| Function                                                                             | Role                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseDataMap(text, filePath)`                                                       | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                         |
+| `expandDataMap(map)`                                                                 | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing. |
+| `parseSubprocessors(text, filePath)`                                                 | Light shape check for `subprocessors.yml`.                                                                                                                            |
+| `loadDataMapFile` / `loadSubprocessorsFile`                                          | Thin `readFileSync` wrappers around the parsers.                                                                                                                      |
+| `checkMapVsMigrations({ mapFilePath, migrationsDir, ignoreTables?, schemaReader? })` | Check 1: replay `*.sql` migrations in memory and compare `d1_tables` to the effective schema.                                                                         |
+| `checkDataStoresVsMap({ mapFilePath, wranglerDir })`                                 | Check 2: parse Wrangler JSON/JSONC in `wranglerDir` and verify each in-scope binding is on an `other_items` `binding:`.                                               |
 
 **Exit mapping (for the CLI)**
 
@@ -108,7 +184,7 @@ other_items:
 
 ## Check 1: map vs migrations
 
-Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` are arguments; config-file defaults arrive with the CLI ticket).
+Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` match `nodrift.config.json` / defaults when run via the CLI).
 
 **Outcomes** (discriminated union on `kind`):
 
@@ -133,7 +209,7 @@ Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` are argume
 
 ## Check 2: data stores vs map
 
-Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` are arguments; config-file defaults arrive with the CLI ticket).
+Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` match config defaults when run via the CLI).
 
 **In-scope Wrangler bindings** (each must appear on at least one `other_items` entry’s **`binding:`** — string or list; one row may cover several names):
 
@@ -149,7 +225,7 @@ Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` are
 
 **Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, Durable Objects, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config.
 
-**Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`) in every case. A **missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any **unreadable** directory is a **fatal** naming the path (`check the \`wrangler\` path`). A **readable directory with no** `wrangler.jsonc`/`wrangler.json`→`ok`with`outcome: "nothing_to_check"`**only when** no`other_items`entry has a`binding:`; if the map lists bindings but no Wrangler JSON/JSONC file is present, that is a **fatal** listing the binding names. JSONC allows comments and trailing commas; a leading UTF-8 BOM is stripped before parse. Parse errors are **fatals** with a JSONC property path (when known), error name, and line/column.
+**Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`) in every case. A **missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any **unreadable** directory is a **fatal** naming the path (`check the \`wrangler\` path`). A readable directory with **no** `wrangler.jsonc`/`wrangler.json` yields **`ok`** with `outcome: "nothing_to_check"`**only when** no`other_items`entry has a`binding:`; if the map lists bindings but no Wrangler JSON/JSONC file is present, that is a **fatal** listing the binding names. JSONC allows comments and trailing commas; a leading UTF-8 BOM is stripped before parse. Parse errors are **fatals** with a JSONC property path (when known), error name, and line/column.
 
 **Single D1 database:** more than one `d1_databases` entry in the same section yields `multiple_d1_databases` (v1 replays one migrations directory in Check 1).
 
@@ -255,7 +331,7 @@ Example:
 
 **Routine release:**
 
-1. Open a PR that bumps `version` in `package.json` (and `package-lock.json` if needed).
+1. Open a PR that bumps `version` in `package.json` (and `package-lock.json` if needed) and updates [CHANGELOG.md](./CHANGELOG.md).
 2. Merge to `main`, then tag the merge commit on `main` as `vX.Y.Z` (tag must match `package.json`).
 3. The **Release** workflow runs `npm run check`, `npm run package:check`, then **`npm stage publish`** via OIDC (no npm token in GitHub).
 4. Approve the staged release with 2FA: `npm stage list @didi-build/nodrift`, `npm stage view <id>`, `npm stage approve <id>`, or the **Staged Packages** tab on [npmjs.com](https://www.npmjs.com/).
