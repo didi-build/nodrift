@@ -9,6 +9,10 @@ const templatesDir = join(packageRoot, "templates");
 const SKELETON_FOOTER =
   "_This document is a starting skeleton, not legal advice. Review it with qualified counsel before relying on it._";
 
+/** Breach of Security Safeguards Regulations (SOR/2018-64) s. 6(1) — Canada Gazette, Part II */
+const CANADA_GAZETTE_SOR_2018_64_S_6_1 =
+  "https://gazette.gc.ca/rp-pr/p2/2018/2018-04-18/html/sor-dors64-eng.html";
+
 const MARKDOWN_SKELETONS = [
   "breach-response.md",
   "breach-record-template.md",
@@ -74,6 +78,8 @@ describe("PIPEDA package templates", () => {
 
     const records = sections.get("6. Keep breach records");
     expect(records).toContain("s. 6(1)");
+    expect(records).toContain(`SOR/2018-64 s. 6(1)`);
+    expect(records).toContain(CANADA_GAZETTE_SOR_2018_64_S_6_1);
 
     expect(breach).not.toContain("prohibits direct notification");
     expect(breach).toContain(
