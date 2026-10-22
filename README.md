@@ -65,7 +65,7 @@ Zero config assumes paths like [we-met](https://github.com/didi-build/we-met):
 | More than one `d1_databases` entry in the **same** section (top level, `env.<name>`, or `previews`) | `multiple_d1_databases` | The same binding repeated across **different** sections is fine (for example production and previews). |
 | Any `durable_objects.bindings` entry                                                                | `durable_objects`       | Durable Objects are not in Check 2’s in-scope binding list in v1.                                      |
 
-Messages name the binding(s) and file, say **not supported yet by nodrift**, and link [ADR 0003 — Proposed changes](./docs/decisions/0003-nodrift-v1-design.md#proposed-changes-for-maintainer-review).
+Messages name the binding(s) and file, say **not supported yet by nodrift**, and link [ADR 0003 — Proposed changes](./docs/decisions/0003-nodrift-v1-design.md#proposed-changes-for-maintainer-review) (decision [DIDI-702](https://linear.app/didi-build/issue/DIDI-702)).
 
 ## v1 and v2
 
