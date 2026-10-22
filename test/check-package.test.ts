@@ -1,17 +1,16 @@
-import { spawnSync } from "node:child_process";
-import { gzipSync } from "node:zlib";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { gzipSync } from "node:zlib";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   inspectTarballFileList,
   isAllowedPackagePath,
   listTarGzEntries,
+  MAX_PACKED_BYTES,
   packageCheckExitCode,
+  resolveMaxPackedBytes,
   runPackageCheck,
 } from "../scripts/check-package.mjs";
-
-const packageRoot = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 function padTar(content: Buffer): Buffer {
   const padded = Buffer.alloc(Math.ceil(content.length / 512) * 512);
@@ -141,39 +140,125 @@ describe("packageCheckExitCode", () => {
   });
 });
 
-describe.sequential("runPackageCheck exit code", () => {
-  it("returns 1 when the budget is exceeded (no smoke install)", async () => {
-    if (!process.env.npm_execpath) {
-      expect.fail("npm_execpath must be set (run tests via npm)");
+function packDestinationFromArgs(packArgs: string[]): string {
+  const i = packArgs.indexOf("--pack-destination");
+  if (i === -1 || i + 1 >= packArgs.length) {
+    throw new Error("pack args missing --pack-destination");
+  }
+  return packArgs[i + 1];
+}
+
+describe("resolveMaxPackedBytes", () => {
+  const envKey = "NODRIFT_PACKAGE_CHECK_MAX_BYTES";
+
+  afterEach(() => {
+    delete process.env[envKey];
+  });
+
+  it("fails closed on invalid env values", () => {
+    process.env[envKey] = "abc";
+    const result = resolveMaxPackedBytes();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain("invalid NODRIFT_PACKAGE_CHECK_MAX_BYTES");
+      expect(result.message).toContain("abc");
     }
+  });
+
+  it("caps env overrides at the default budget (cannot raise)", () => {
+    process.env[envKey] = String(MAX_PACKED_BYTES + 50_000);
+    const result = resolveMaxPackedBytes();
+    expect(result).toEqual({ ok: true, value: MAX_PACKED_BYTES });
+  });
+
+  it("allows lowering the budget via env", () => {
+    process.env[envKey] = "1000";
+    const result = resolveMaxPackedBytes();
+    expect(result).toEqual({ ok: true, value: 1000 });
+  });
+
+  it("caps programmatic overrides at the default budget", () => {
+    const result = resolveMaxPackedBytes({ maxPackedBytes: MAX_PACKED_BYTES + 1 });
+    expect(result).toEqual({ ok: true, value: MAX_PACKED_BYTES });
+  });
+});
+
+describe.sequential("runPackageCheck exit code", () => {
+  afterEach(() => {
+    delete process.env.NODRIFT_PACKAGE_CHECK_MAX_BYTES;
+    vi.restoreAllMocks();
+  });
+
+  it("returns 1 when npm pack fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const code = await runPackageCheck({
+      skipSmoke: true,
+      runNpm: () => {
+        throw new Error("simulated pack failure");
+      },
+    });
+    expect(code).toBe(1);
+    expect(errorSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain(
+      "npm pack failed",
+    );
+    expect(errorSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain(
+      "simulated pack failure",
+    );
+  });
+
+  it("returns 1 when pack produces other than one .tgz", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const code = await runPackageCheck({
+      skipSmoke: true,
+      runNpm: () => {},
+      listPackArchives: () => ["a.tgz", "b.tgz"],
+    });
+    expect(code).toBe(1);
+    expect(errorSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain(
+      "expected one .tgz",
+    );
+  });
+
+  it("returns 1 when the tarball cannot be read", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const code = await runPackageCheck({
+      skipSmoke: true,
+      runNpm: (packArgs) => {
+        const dest = packDestinationFromArgs(packArgs);
+        writeFileSync(join(dest, "only.tgz"), Buffer.from("not-gzip", "utf8"));
+      },
+    });
+    expect(code).toBe(1);
+    expect(errorSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain(
+      "read tarball failed",
+    );
+  });
+
+  it("returns 1 when the budget is exceeded (no smoke install)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await runPackageCheck({
       maxPackedBytes: 1_000,
       skipSmoke: true,
-      ignorePackScripts: true,
+      runNpm: (packArgs) => {
+        const dest = packDestinationFromArgs(packArgs);
+        writeFileSync(join(dest, "pkg.tgz"), Buffer.alloc(5_000));
+      },
+      listPackageTarballPaths: async () => ["package/dist/cli.js"],
     });
     expect(code).toBe(1);
+    expect(errorSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain(
+      "exceeds budget",
+    );
   });
 
-  it("CLI process exits 1 when NODRIFT_PACKAGE_CHECK_MAX_BYTES is low", () => {
-    if (!process.env.npm_execpath) {
-      expect.fail("npm_execpath must be set (run tests via npm)");
-    }
-    const result = spawnSync(
-      process.execPath,
-      [join(packageRoot, "scripts/check-package.mjs")],
-      {
-        cwd: packageRoot,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          NODRIFT_PACKAGE_CHECK_MAX_BYTES: "1000",
-          NODRIFT_PACKAGE_CHECK_IGNORE_SCRIPTS: "1",
-          HUSKY: "0",
-        },
-      },
+  it("returns 1 when NODRIFT_PACKAGE_CHECK_MAX_BYTES is invalid", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.env.NODRIFT_PACKAGE_CHECK_MAX_BYTES = "abc";
+    const code = await runPackageCheck({ skipSmoke: true });
+    expect(code).toBe(1);
+    expect(errorSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain(
+      "invalid NODRIFT_PACKAGE_CHECK_MAX_BYTES",
     );
-    expect(result.status).toBe(1);
-    expect(result.stderr + result.stdout).toContain("exceeds budget");
   });
 });
 
