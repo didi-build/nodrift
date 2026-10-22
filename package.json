@@ -1,6 +1,6 @@
 {
   "name": "@didi-build/nodrift",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Keeps privacy docs from drifting from the code.",
   "license": "MIT",
   "author": "Didi Build",

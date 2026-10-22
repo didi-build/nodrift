@@ -4,14 +4,17 @@ All notable changes to `@didi-build/nodrift` are documented here. Consumers shou
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning follows [SemVer](https://semver.org/) (see README **Versioning** and [docs/version-bump.md](./docs/version-bump.md)).
 
-## [Unreleased] — planned 0.1.0
+## [Unreleased]
 
-First published CLI for v1: `init`, `check`, and reserved `sync` (not yet tagged on npm; `package.json` is still `0.0.0` until [DIDI-674](https://linear.app/didi-build/issue/DIDI-674) completes).
+## [0.1.0] - 2026-10-22
+
+First published npm release for v1: `init`, `check`, and reserved `sync`.
 
 ### Added
 
 - **`nodrift init`** — idempotent scaffolding of owned privacy files (never overwrites). Writes `.nodrift/manifest.json` when it creates at least one file.
 - **`nodrift check`** — runs map validation, Check 1 (map vs migrations), Check 2 (Wrangler data-store bindings vs map), and optional `subprocessors.yml` validation when that file exists.
+- **Unsupported Wrangler configs (ADR 0003, [DIDI-712](https://linear.app/didi-build/issue/DIDI-712))** — `check` fails with exit code `1` on multiple `d1_databases` in the same Wrangler section and on any `durable_objects.bindings` entry instead of passing silently.
 - **`nodrift sync`** — reserved; prints that sync is not available in v1 and exits `2`.
 - **`nodrift.config.json`** — optional overrides for `map`, `subprocessors`, `migrations`, `wrangler`, and `ignoreTables`.
 - Grouped data map format (`schema_version: 1`, `d1_tables`, `other_items`).
