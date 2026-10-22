@@ -61,7 +61,7 @@ Reads `wrangler.jsonc` or `wrangler.json` under the configured `wrangler` direct
 | `wrangler.toml` only                      | No JSON/JSONC config                                                           | Use `wrangler.jsonc` or `wrangler.json`.                                    |
 | Map lists `binding:` but no Wrangler JSON | Bindings declared without config file                                          | Add Wrangler JSON or remove unused `binding:` entries.                      |
 
-Not checked in v1: **no stale-binding check** — a typo in `binding:` leaves the real Wrangler binding uncovered; also outside vendors, `services`, `assets`, `vars`, `ratelimits`, `routes`, and Durable Objects.
+Not checked in v1: **stale `binding:` entries** — a map name that matches no Wrangler binding is not reported (Check 2 only checks Wrangler bindings against the map, not the reverse); also outside vendors, `services`, `assets`, `vars`, `ratelimits`, `routes`, and Durable Objects.
 
 #### Subprocessors (`subprocessors.yml`)
 
