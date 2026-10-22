@@ -4,9 +4,9 @@ All notable changes to `@didi-build/nodrift` are documented here. Consumers shou
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning follows [SemVer](https://semver.org/) (see README **Versioning** and [docs/version-bump.md](./docs/version-bump.md)).
 
-## [0.1.0] - 2026-10-22
+## [Unreleased] — planned 0.1.0
 
-First published CLI for v1: `init`, `check`, and reserved `sync`.
+First published CLI for v1: `init`, `check`, and reserved `sync` (not yet tagged on npm; `package.json` is still `0.0.0` until [DIDI-674](https://linear.app/didi-build/issue/DIDI-674) completes).
 
 ### Added
 
@@ -61,7 +61,7 @@ Reads `wrangler.jsonc` or `wrangler.json` under the configured `wrangler` direct
 | `wrangler.toml` only                      | No JSON/JSONC config                                                           | Use `wrangler.jsonc` or `wrangler.json`.                                    |
 | Map lists `binding:` but no Wrangler JSON | Bindings declared without config file                                          | Add Wrangler JSON or remove unused `binding:` entries.                      |
 
-Not checked in v1: bindings with no `binding:` typo reverse-check, outside vendors, `services`, `assets`, `vars`, `ratelimits`, `routes`, Durable Objects.
+Not checked in v1: **no stale-binding check** — a typo in `binding:` leaves the real Wrangler binding uncovered; also outside vendors, `services`, `assets`, `vars`, `ratelimits`, `routes`, and Durable Objects.
 
 #### Subprocessors (`subprocessors.yml`)
 
@@ -77,5 +77,3 @@ Validated only when the configured file **exists**.
 - **`0`** — pass (including “nothing to check” when there is no migrations/map D1 work or no Wrangler bindings to compare).
 - **`1`** — findings (map, schema, bindings, subprocessors).
 - **`2`** — cannot run (bad config, unreadable files, failed migration replay, corrupt manifest during `init`, etc.).
-
-[0.1.0]: https://github.com/didi-build/nodrift/releases/tag/v0.1.0

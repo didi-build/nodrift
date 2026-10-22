@@ -16,7 +16,7 @@ Created from [Launchpad](https://github.com/didi-build/launchpad) by Didi Build 
 Requires **Node.js `>=22.13.0`** (`node:sqlite` for Check 1). In a consumer repo, pin an exact version and run:
 
 ```bash
-npm install --save-dev @didi-build/nodrift@0.1.0
+npm install --save-dev @didi-build/nodrift@<version>  # pin exact; first publish will be 0.1.0
 npx nodrift init    # once: scaffold owned privacy files (safe to re-run)
 npx nodrift check   # in CI and locally
 ```
@@ -225,7 +225,11 @@ Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` mat
 
 **Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, Durable Objects, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config.
 
-**Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`) in every case. A **missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any **unreadable** directory is a **fatal** naming the path (`check the \`wrangler\` path`). A readable directory with **no** `wrangler.jsonc`/`wrangler.json` yields **`ok`** with `outcome: "nothing_to_check"`**only when** no`other_items`entry has a`binding:`; if the map lists bindings but no Wrangler JSON/JSONC file is present, that is a **fatal** listing the binding names. JSONC allows comments and trailing commas; a leading UTF-8 BOM is stripped before parse. Parse errors are **fatals** with a JSONC property path (when known), error name, and line/column.
+**Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`) in every case. A **missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any **unreadable** directory is a **fatal** naming the path (`check the \`wrangler\` path`).
+
+If the directory is readable but has no `wrangler.jsonc` or `wrangler.json`, Check 2 returns **`ok`** with `outcome: "nothing_to_check"` only when no `other_items` entry has a `binding:`. If the map lists any `binding:` but no Wrangler JSON/JSONC file is present, that is a **fatal** listing those binding names.
+
+JSONC allows comments and trailing commas; a leading UTF-8 BOM is stripped before parse. Parse errors are **fatals** with a JSONC property path (when known), error name, and line/column.
 
 **Single D1 database:** more than one `d1_databases` entry in the same section yields `multiple_d1_databases` (v1 replays one migrations directory in Check 1).
 
