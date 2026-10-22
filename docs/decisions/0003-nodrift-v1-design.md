@@ -426,10 +426,20 @@ Production `dependencies` (exact-pinned in `package.json` when implementation la
 
 These are **not** locked in [DIDI-659](https://linear.app/didi-build/issue/DIDI-659/nodrift-build-v1-parent-decisions-and-build-breakdown). The ADR keeps the locked decision above; discuss before changing.
 
-| Topic                          | Locked v1 decision                       | Proposal                                                                                            |
-| ------------------------------ | ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Multiple D1 databases**      | One migrations dir + one `d1_tables` map | Add first-class multi-database support (per-binding migrations + map sections) in v1.1 or v2.       |
-| **Durable Objects in Check 2** | D1, R2, KV, queues, Images only          | Also require map coverage for `durable_objects` bindings with explicit `binding:` on `other_items`. |
+### Decision ([DIDI-702](https://linear.app/didi-build/issue/DIDI-702))
+
+Decided by Diadem on **2026-10-22** (recorded on [DIDI-702](https://linear.app/didi-build/issue/DIDI-702) when marked Done):
+
+- **Multiple D1 databases** — **Deferred.** No current repo uses more than one D1 database per Wrangler section.
+- **Durable Objects in Check 2** — **Deferred.** No current repo uses Durable Object bindings in Wrangler.
+- **Until support ships** — `check` must **fail loudly** on either configuration instead of passing silently. Implementation: [DIDI-712](https://linear.app/didi-build/issue/DIDI-712).
+
+| Topic                          | Locked v1 decision                       | Proposal                                                                                            | Status (DIDI-702)         |
+| ------------------------------ | ---------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------- |
+| **Multiple D1 databases**      | One migrations dir + one `d1_tables` map | Add first-class multi-database support (per-binding migrations + map sections) in v1.1 or v2.       | **Deferred (2026-10-22)** |
+| **Durable Objects in Check 2** | D1, R2, KV, queues, Images only          | Also require map coverage for `durable_objects` bindings with explicit `binding:` on `other_items`. | **Deferred (2026-10-22)** |
+
+**Interim rule (v1, per DIDI-702):** `nodrift check` **fails** (exit `1`) when the Wrangler config declares **more than one** `d1_databases` entry in any single section (top level, `env.<name>`, or `previews`), or **any** `durable_objects` binding in those sections. Diagnostics name the binding(s) and Wrangler file, state that the configuration is **not supported yet by nodrift**, and link this section. There is **no bypass flag** in v1.
 
 ---
 
@@ -466,6 +476,10 @@ Approved by the maintainer on **2026-10-21** (publish pipeline, [DIDI-673](https
 21. **Trusted-publisher bootstrap** — The first release needs a one-time maintainer bootstrap: create the package on npm, stage a throwaway version, run `npm trust github … --allow-stage-publish`, reject the throwaway stage, then tag real releases. A newly created trusted-publisher configuration **expires** if its first successful publish does not complete within **2 days** ([npm trusted publishers](https://docs.npmjs.com/trusted-publishers), “Trusted publisher configuration expiry”), so run the trust command, tag, and approve in the same working session. The docs do not say whether a staged but unapproved release counts as that first publish, so do not rely on staging alone.
 22. **`release.yml` invariants** — Workflow file name **`release.yml`**; trigger **only** `push` of tags `v*`; top-level `permissions: { contents: read }`; single `release` job with `id-token: write`, repo guard `didi-build/nodrift`, no caches; **Node 24** in the release job only (`engines.node` stays `>=22.13.0`); npm **≥ 11.15.0** before `npm ci`; tag must equal `v` + `package.json` version and sit on `origin/main`; then `npm ci`, `npm run check`, `npm run package:check`, **`npm stage publish`** (never `npm publish`); no `NODE_AUTH_TOKEN`, `NPM_TOKEN`, or `secrets.*`.
 23. **Provenance** — Trusted publishing from GitHub Actions generates provenance automatically. **Do not** set `publishConfig.provenance` (it breaks the maintainer’s manual bootstrap from a laptop). Verify provenance on the **first** approved release (Provenance badge on npm, `npm audit signatures` in a temp install). If staged publishes do not carry provenance, fall back to direct `npm publish` behind a GitHub **environment** approval gate.
+
+Approved by the maintainer on **2026-10-22** ([DIDI-702](https://linear.app/didi-build/issue/DIDI-702); implemented in [DIDI-712](https://linear.app/didi-build/issue/DIDI-712)):
+
+24. **Unsupported Wrangler configurations** — Per the [DIDI-702 decision](#decision-didi-702): both proposals in [Proposed changes](#proposed-changes-for-maintainer-review) are **deferred** (no current repo uses either). Until first-class support ships, `check` fails with `multiple_d1_databases` or `durable_objects` findings (exit `1`) instead of passing silently; messages name bindings, say **not supported yet by nodrift**, and link ADR 0003. No opt-out in v1.
 
 ---
 

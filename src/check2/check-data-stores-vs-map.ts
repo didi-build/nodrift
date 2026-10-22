@@ -77,13 +77,16 @@ export function checkDataStoresVsMap(
     return { kind: "fatal", fatal: parsed.fatal };
   }
 
-  const { bindings, multipleD1InSection } = extractBindings(parsed.config);
+  const { bindings, multipleD1InSection, durableObjectBindings } = extractBindings(
+    parsed.config,
+  );
   const covered = collectCoveredBindings(expandDataMap(map));
   const comparisonFindings = compareBindingsToMap(
     bindings,
     covered,
     located.configPath,
     multipleD1InSection,
+    durableObjectBindings,
   );
 
   if (comparisonFindings.length > 0) {

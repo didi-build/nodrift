@@ -54,8 +54,18 @@ Zero config assumes paths like [we-met](https://github.com/didi-build/we-met):
 - New **outside vendors** (email, analytics, etc.) — only Cloudflare bindings appear in Wrangler; use the PR privacy checklist.
 - **PII in logs**, **third-party scripts**, policy generation, `wrangler.toml`-only projects.
 - **Stale `binding:` entries** — a map name that matches no Wrangler binding is not reported (Check 2 only checks Wrangler bindings against the map, not the reverse).
-- **Multiple D1 databases** per Wrangler section (reported as a finding; v1 assumes one migrations dir and one `d1_tables` block).
 - Toggling checks off in config — all v1 checks always run when inputs exist.
+
+## Unsupported Wrangler configs (fail `check`)
+
+`check` exits **`1`** (no bypass in v1) when Wrangler JSON/JSONC declares:
+
+| Config                                                                                              | Finding code            | Rule                                                                                                   |
+| --------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| More than one `d1_databases` entry in the **same** section (top level, `env.<name>`, or `previews`) | `multiple_d1_databases` | The same binding repeated across **different** sections is fine (for example production and previews). |
+| Any `durable_objects.bindings` entry                                                                | `durable_objects`       | Durable Objects are not in Check 2’s in-scope binding list in v1.                                      |
+
+Messages name the binding(s) and file, say **not supported yet by nodrift**, and link [ADR 0003 — Proposed changes](./docs/decisions/0003-nodrift-v1-design.md#proposed-changes-for-maintainer-review) (decision [DIDI-702](https://linear.app/didi-build/issue/DIDI-702)).
 
 ## v1 and v2
 
@@ -223,7 +233,7 @@ Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` mat
 
 **Sections scanned:** the top-level config, every `env.<name>` block, and `previews`. The same binding name in multiple sections is merged (one finding lists every section, for example `top level and previews`).
 
-**Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, Durable Objects, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config.
+**Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config. **`durable_objects` bindings fail `check`** instead of being compared (see [Unsupported Wrangler configs](#unsupported-wrangler-configs-fail-check)).
 
 **Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`) in every case. A **missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any **unreadable** directory is a **fatal** naming the path (`check the \`wrangler\` path`).
 
@@ -231,17 +241,17 @@ If the directory is readable but has no `wrangler.jsonc` or `wrangler.json`, Che
 
 JSONC allows comments and trailing commas; a leading UTF-8 BOM is stripped before parse. Parse errors are **fatals** with a JSONC property path (when known), error name, and line/column.
 
-**Single D1 database:** more than one `d1_databases` entry in the same section yields `multiple_d1_databases` (v1 replays one migrations directory in Check 1).
+**Single D1 database per section:** more than one `d1_databases` entry in the same section yields `multiple_d1_databases` (see [Unsupported Wrangler configs](#unsupported-wrangler-configs-fail-check); v1 replays one migrations directory in Check 1).
 
 **No stale-binding check in v1** — map `binding:` names with no Wrangler counterpart are not reported; Check 2 only checks Wrangler bindings against the map, not the reverse.
 
 **Outcomes** (same `kind` / `outcome` shape as Check 1):
 
-| `kind`     | CLI exit | Meaning                                                                                                      |
-| ---------- | -------- | ------------------------------------------------------------------------------------------------------------ |
-| `fatal`    | `2`      | Unreadable map, loader fatal, unreadable Wrangler dir, TOML-only config, or invalid/empty Wrangler JSON.     |
-| `findings` | `1`      | Loader validation findings (comparison skipped), `binding_not_in_map`, or `multiple_d1_databases`.           |
-| `ok`       | `0`      | `outcome: "checked"` with `bindingCount`, or `outcome: "nothing_to_check"` when there is no Wrangler config. |
+| `kind`     | CLI exit | Meaning                                                                                                               |
+| ---------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `fatal`    | `2`      | Unreadable map, loader fatal, unreadable Wrangler dir, TOML-only config, or invalid/empty Wrangler JSON.              |
+| `findings` | `1`      | Loader validation findings (comparison skipped), `binding_not_in_map`, `multiple_d1_databases`, or `durable_objects`. |
+| `ok`       | `0`      | `outcome: "checked"` with `bindingCount`, or `outcome: "nothing_to_check"` when there is no Wrangler config.          |
 
 **Example fix** (`binding_not_in_map`):
 

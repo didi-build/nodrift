@@ -359,8 +359,73 @@ other_items:
         const multi = result.findings.filter((f) => f.code === "multiple_d1_databases");
         expect(multi).toHaveLength(1);
         expect(multi[0].message).toContain("top level");
+        expect(multi[0].message).toContain("not supported yet by nodrift");
+        expect(multi[0].message).toContain("`DB1`");
+        expect(multi[0].message).toContain("`DB2`");
+        expect(multi[0].message).toContain("0003-nodrift-v1-design.md");
         expect(multi[0].path).toBe("d1_databases");
         expect(result.findings.some((f) => f.code === "binding_not_in_map")).toBe(true);
+      }
+    });
+
+    it("allows one D1 database per section across top level and env", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": JSON.stringify({
+          d1_databases: [
+            { binding: "APP_DB", database_name: "prod", database_id: "1" },
+          ],
+          env: {
+            staging: {
+              d1_databases: [
+                { binding: "APP_DB", database_name: "staging", database_id: "2" },
+              ],
+            },
+          },
+        }),
+      });
+      const mapYaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: d1.app_db
+    binding: APP_DB
+    whose: operational
+    data: x
+    purpose: y
+    processors: [Cloudflare]
+    retention: r
+`;
+      const mapDir = makeMapDir(mapYaml);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result).toEqual({
+        kind: "ok",
+        outcome: "checked",
+        bindingCount: 1,
+      });
+    });
+
+    it("reports durable_objects bindings as unsupported", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.jsonc": JSON.stringify({
+          durable_objects: {
+            bindings: [{ name: "MY_COUNTER", class_name: "Counter" }],
+          },
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        const durable = result.findings.filter((f) => f.code === "durable_objects");
+        expect(durable).toHaveLength(1);
+        expect(durable[0].message).toContain("`MY_COUNTER`");
+        expect(durable[0].message).toContain("not supported yet by nodrift");
+        expect(durable[0].path).toBe("durable_objects.bindings[0].name");
       }
     });
 
@@ -872,7 +937,13 @@ other_items:
         kv_namespaces: [{ binding: "A_FIRST", id: "1" }],
         images: { binding: "M_MIDDLE" },
       }).bindings;
-      const findings = compareBindingsToMap(bindings, new Set(), "wrangler.jsonc", []);
+      const findings = compareBindingsToMap(
+        bindings,
+        new Set(),
+        "wrangler.jsonc",
+        [],
+        [],
+      );
       const names = findings.map((f) => /binding `([^`]+)`/.exec(f.message)?.[1]);
       expect(names).toEqual(["A_FIRST", "M_MIDDLE", "Z_LAST"]);
     });
