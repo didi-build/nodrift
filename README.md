@@ -53,7 +53,7 @@ Zero config assumes paths like [we-met](https://github.com/didi-build/we-met):
 
 - New **outside vendors** (email, analytics, etc.) — only Cloudflare bindings appear in Wrangler; use the PR privacy checklist.
 - **PII in logs**, **third-party scripts**, policy generation, `wrangler.toml`-only projects.
-- **Stale** `binding:` entries (a typo in the map does not fail if the real binding is still uncovered).
+- **Stale `binding:` entries** — a map name that matches no Wrangler binding is not reported (Check 2 only checks Wrangler bindings against the map, not the reverse).
 - **Multiple D1 databases** per Wrangler section (reported as a finding; v1 assumes one migrations dir and one `d1_tables` block).
 - Toggling checks off in config — all v1 checks always run when inputs exist.
 
@@ -233,7 +233,7 @@ JSONC allows comments and trailing commas; a leading UTF-8 BOM is stripped befor
 
 **Single D1 database:** more than one `d1_databases` entry in the same section yields `multiple_d1_databases` (v1 replays one migrations directory in Check 1).
 
-**No stale-binding check in v1** — a typo in `binding:` leaves the real Wrangler binding uncovered.
+**No stale-binding check in v1** — map `binding:` names with no Wrangler counterpart are not reported; Check 2 only checks Wrangler bindings against the map, not the reverse.
 
 **Outcomes** (same `kind` / `outcome` shape as Check 1):
 
