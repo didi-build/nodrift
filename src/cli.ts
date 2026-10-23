@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   }
 
   if (parsed.command === "check") {
-    const result = runCheck(loaded.config);
+    const result = runCheck(loaded.config, process.cwd());
     await writeStdout(`${result.lines.join("\n")}\n`);
     process.exitCode = result.exitCode;
     return;

@@ -28,7 +28,9 @@ export type CheckDataStoresVsMapFindings = {
 
 export type CheckDataStoresVsMapFatal = {
   kind: "fatal";
+  /** First fatal (stable sort by config path). */
   fatal: FatalError;
+  fatals: FatalError[];
 };
 
 export type CheckDataStoresVsMapResult =

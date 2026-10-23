@@ -105,7 +105,10 @@ function subprocessorsStatus(
   return { kind: "ok", detail: "valid" };
 }
 
-export function runCheck(config: ResolvedNodriftConfig): RunCheckResult {
+export function runCheck(
+  config: ResolvedNodriftConfig,
+  repoRoot: string,
+): RunCheckResult {
   const lines: string[] = [];
   const findings: Finding[] = [];
   const fatals: FatalError[] = [];
@@ -159,10 +162,13 @@ export function runCheck(config: ResolvedNodriftConfig): RunCheckResult {
 
   const check2 = checkDataStoresVsMap({
     mapFilePath: config.mapPath,
-    wranglerDir: config.wranglerDir,
+    repoRoot,
+    wranglerSearchDir: config.wranglerDir,
+    wranglerConfigPaths:
+      config.wranglerConfigPaths.length > 0 ? config.wranglerConfigPaths : undefined,
   });
   if (check2.kind === "fatal") {
-    fatals.push(check2.fatal);
+    fatals.push(...check2.fatals);
   } else if (check2.kind === "findings") {
     findings.push(...check2.findings);
   }

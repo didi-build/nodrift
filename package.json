@@ -1,6 +1,6 @@
 {
   "name": "@didi-build/nodrift",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Keeps privacy docs from drifting from the code.",
   "license": "MIT",
   "author": "Didi Build",
@@ -85,6 +85,7 @@
   },
   "dependencies": {
     "jsonc-parser": "3.3.1",
+    "smol-toml": "1.3.1",
     "yaml": "2.9.1"
   }
 }

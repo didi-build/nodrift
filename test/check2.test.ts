@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkDataStoresVsMap } from "../src/check2/check-data-stores-vs-map.js";
@@ -50,6 +50,17 @@ function makeMapDir(yaml: string): string {
   const root = mkdtempSync(join(tmpdir(), "nodrift-check2-map-"));
   tempRoots.push(root);
   writeFileSync(join(root, "data-map.yml"), yaml, "utf8");
+  return root;
+}
+
+function makeRepoTree(files: Record<string, string>): string {
+  const root = mkdtempSync(join(tmpdir(), "nodrift-check2-repo-"));
+  tempRoots.push(root);
+  for (const [relPath, content] of Object.entries(files)) {
+    const full = join(root, relPath);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, content, "utf8");
+  }
   return root;
 }
 
@@ -946,6 +957,120 @@ other_items:
       );
       const names = findings.map((f) => /binding `([^`]+)`/.exec(f.message)?.[1]);
       expect(names).toEqual(["A_FIRST", "M_MIDDLE", "Z_LAST"]);
+    });
+  });
+
+  describe("repo-wide Wrangler discovery", () => {
+    it("reports binding_not_in_map from a nested worker config with the file path", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.jsonc": JSON.stringify({
+          images: { binding: "ROOT_IMAGES" },
+        }),
+        "workers/followup-email/wrangler.jsonc": JSON.stringify({
+          queues: {
+            producers: [{ binding: "NESTED_QUEUE", queue: "q" }],
+          },
+        }),
+      });
+      const mapYaml = `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: images
+    binding: ROOT_IMAGES
+    whose: operational
+    data: x
+    purpose: y
+    processors: []
+    retention: r
+`;
+      const mapDir = makeMapDir(mapYaml);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind !== "findings") {
+        return;
+      }
+      expect(result.findings).toHaveLength(1);
+      expect(result.findings[0].code).toBe("binding_not_in_map");
+      expect(result.findings[0].message).toContain("NESTED_QUEUE");
+      expect(result.findings[0].file).toBe(
+        join(repoRoot, "workers/followup-email/wrangler.jsonc"),
+      );
+    });
+
+    it("honors wranglerConfigs explicit paths", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.jsonc": JSON.stringify({
+          images: { binding: "ROOT_IMAGES" },
+        }),
+        "workers/ignored/wrangler.jsonc": JSON.stringify({
+          images: { binding: "IGNORED_IMAGES" },
+        }),
+      });
+      const mapYaml = `schema_version: 1
+d1_tables: {}
+other_items: []
+`;
+      const mapDir = makeMapDir(mapYaml);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerConfigPaths: [join(repoRoot, "wrangler.jsonc")],
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        expect(result.findings).toHaveLength(1);
+        expect(result.findings[0].message).toContain("ROOT_IMAGES");
+        expect(result.findings[0].file).toBe(join(repoRoot, "wrangler.jsonc"));
+      }
+    });
+
+    it("checks wrangler.toml when discovered", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.jsonc": "{}",
+        "workers/kv-consumer/wrangler.toml": `name = "kv-consumer"
+
+[[kv_namespaces]]
+binding = "TOML_KV"
+id = "abc"
+`,
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        const tomlFinding = result.findings.find((f) => f.message.includes("TOML_KV"));
+        expect(tomlFinding?.file).toBe(
+          join(repoRoot, "workers/kv-consumer/wrangler.toml"),
+        );
+      }
+    });
+
+    it("does not scan node_modules for wrangler configs", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.jsonc": "{}",
+        "node_modules/pkg/wrangler.jsonc": JSON.stringify({
+          images: { binding: "HIDDEN_IMAGES" },
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result).toEqual({
+        kind: "ok",
+        outcome: "checked",
+        bindingCount: 0,
+      });
     });
   });
 

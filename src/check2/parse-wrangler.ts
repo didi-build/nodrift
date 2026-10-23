@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import {
   getLocation,
   parse,
@@ -6,6 +7,7 @@ import {
   type JSONPath,
   type ParseError,
 } from "jsonc-parser";
+import { parse as parseToml } from "smol-toml";
 import { fatal, type FatalError } from "../findings.js";
 
 export type WranglerReadFs = {
@@ -80,32 +82,10 @@ function firstParseErrorMessage(text: string, errors: ParseError[]): string {
 export type ParseWranglerResult =
   { ok: true; config: Record<string, unknown> } | { ok: false; fatal: FatalError };
 
-export function parseWranglerConfigFile(
+function parseWranglerJsoncText(
   configPath: string,
-  fs: WranglerReadFs = defaultFs,
+  withoutBom: string,
 ): ParseWranglerResult {
-  let text: string;
-  try {
-    text = fs.readFileSync(configPath, "utf8");
-  } catch (err) {
-    return {
-      ok: false,
-      fatal: fatal(
-        configPath,
-        `cannot read Wrangler config \`${configPath}\`: ${formatErr(err)}`,
-      ),
-    };
-  }
-
-  const withoutBom = stripLeadingBom(text);
-
-  if (withoutBom.trim().length === 0) {
-    return {
-      ok: false,
-      fatal: fatal(configPath, "Wrangler config is empty"),
-    };
-  }
-
   const errors: ParseError[] = [];
   const value = parse(withoutBom, errors, {
     allowTrailingComma: true,
@@ -132,4 +112,60 @@ export function parseWranglerConfigFile(
   }
 
   return { ok: true, config: value as Record<string, unknown> };
+}
+
+function parseWranglerTomlText(
+  configPath: string,
+  withoutBom: string,
+): ParseWranglerResult {
+  try {
+    const value = parseToml(withoutBom);
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return {
+        ok: false,
+        fatal: fatal(configPath, "Wrangler config root must be a TOML table"),
+      };
+    }
+    return { ok: true, config: value as Record<string, unknown> };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      fatal: fatal(configPath, `TOML syntax error: ${detail}`),
+    };
+  }
+}
+
+export function parseWranglerConfigFile(
+  configPath: string,
+  fs: WranglerReadFs = defaultFs,
+): ParseWranglerResult {
+  let text: string;
+  try {
+    text = fs.readFileSync(configPath, "utf8");
+  } catch (err) {
+    return {
+      ok: false,
+      fatal: fatal(
+        configPath,
+        `cannot read Wrangler config \`${configPath}\`: ${formatErr(err)}`,
+      ),
+    };
+  }
+
+  const withoutBom = stripLeadingBom(text);
+
+  if (withoutBom.trim().length === 0) {
+    return {
+      ok: false,
+      fatal: fatal(configPath, "Wrangler config is empty"),
+    };
+  }
+
+  const base = basename(configPath);
+  if (base === "wrangler.toml") {
+    return parseWranglerTomlText(configPath, withoutBom);
+  }
+
+  return parseWranglerJsoncText(configPath, withoutBom);
 }

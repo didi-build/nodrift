@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-23
+
+### Added
+
+- **Check 2 multi-config discovery** — `nodrift check` walks the repository (from the configured `wrangler` search directory, default `.`) for `wrangler.json`, `wrangler.jsonc`, and `wrangler.toml`, skipping `node_modules` and common build or VCS directories. Each in-scope binding finding names the config file it came from.
+- **`wranglerConfigs` in `nodrift.config.json`** — optional list of Wrangler config file paths (relative to the repo root). When set, discovery is skipped and only those files are checked.
+- **`wrangler.toml` parsing** — discovered or explicitly listed TOML configs are parsed for Check 2 (legacy single-directory `checkDataStoresVsMap({ wranglerDir })` still treats TOML-only as a fatal).
+
+### Changed
+
+- Check 2 binding diagnostics may include findings from more than one Wrangler config in the same run.
+
 ## [0.1.0] - 2026-10-22
 
 First published npm release for v1: `init`, `check`, and reserved `sync`.
@@ -55,15 +67,15 @@ Ignored by default: `sqlite_*`, `_cf_*`, `d1_migrations`, plus `ignoreTables`.
 
 #### Check 2 — data stores vs map
 
-Reads `wrangler.jsonc` or `wrangler.json` under the configured `wrangler` directory.
+Discovers every `wrangler.json`, `wrangler.jsonc`, and `wrangler.toml` under the configured `wrangler` search directory (default repo root), or checks only the paths in `wranglerConfigs` when that key is set.
 
 | Code / situation                          | Meaning                                                                        | How to fix                                                                                 |
 | ----------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `binding_not_in_map`                      | D1, R2, KV, queue producer, or Images binding not on any `other_items.binding` | Add an `other_items` row listing the binding name (snippet in the message).                |
 | `multiple_d1_databases`                   | More than one `d1_databases` entry in one Wrangler section                     | Remove extra D1 bindings until nodrift supports multiple databases per section (ADR 0003). |
 | `durable_objects`                         | Any `durable_objects.bindings` entry                                           | Remove Durable Object bindings until nodrift supports them (ADR 0003).                     |
-| `wrangler.toml` only                      | No JSON/JSONC config                                                           | Use `wrangler.jsonc` or `wrangler.json`.                                                   |
-| Map lists `binding:` but no Wrangler JSON | Bindings declared without config file                                          | Add Wrangler JSON or remove unused `binding:` entries.                                     |
+| `wrangler.toml` only (legacy API)         | Single-directory check with only TOML                                          | Use `wrangler.jsonc` or `wrangler.json`, or rely on repo discovery / `wranglerConfigs`.    |
+| Map lists `binding:` but no Wrangler file | Bindings declared without a matching config                                    | Add Wrangler config(s) or remove unused `binding:` entries.                                |
 
 Not checked in v1: **stale `binding:` entries** — a map name that matches no Wrangler binding is not reported (Check 2 only checks Wrangler bindings against the map, not the reverse); also outside vendors, `services`, `assets`, `vars`, `ratelimits`, and `routes`. **Durable Objects** and **multiple D1 databases per section** fail `check` as unsupported configs (see ADR 0003).
 

@@ -9,6 +9,7 @@ export type ResolvedNodriftConfig = NodriftConfig & {
   subprocessorsPath: string;
   migrationsDir: string;
   wranglerDir: string;
+  wranglerConfigPaths: string[];
 };
 
 export type LoadConfigResult =
@@ -26,6 +27,9 @@ function resolvePaths(repoRoot: string, config: NodriftConfig): ResolvedNodriftC
     subprocessorsPath: resolvePath(repoRoot, config.subprocessors),
     migrationsDir: resolvePath(repoRoot, config.migrations),
     wranglerDir: resolvePath(repoRoot, config.wrangler),
+    wranglerConfigPaths: config.wranglerConfigs.map((path) =>
+      resolvePath(repoRoot, path),
+    ),
   };
 }
 
