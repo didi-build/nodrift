@@ -28,13 +28,13 @@ function formatErr(err: unknown): string {
 }
 
 export type LocateWranglerConfigResult =
-  | { ok: true; kind: "config"; configPath: string }
+  | { ok: true; kind: "config"; configPath: string; skippedConfigPath?: string }
   | { ok: true; kind: "nothing" }
   | { ok: false; fatal: FatalError }
   | { ok: false; kind: "toml_only"; tomlPath: string };
 
 /**
- * Resolves `wrangler.jsonc`, then `wrangler.json`, in `wranglerDir`.
+ * Resolves `wrangler.json`, then `wrangler.jsonc`, in `wranglerDir` (Wrangler order).
  * TOML-only is reported separately so callers can return a Check 2 fatal.
  */
 export function locateWranglerConfig(
@@ -65,7 +65,12 @@ export function locateWranglerConfig(
 
   const resolved = resolveWranglerConfigInDir(wranglerDir, names);
   if (resolved.kind === "config") {
-    return { ok: true, kind: "config", configPath: resolved.configPath };
+    return {
+      ok: true,
+      kind: "config",
+      configPath: resolved.configPath,
+      skippedConfigPath: resolved.skippedConfigPath,
+    };
   }
   if (resolved.kind === "toml_only") {
     return { ok: false, kind: "toml_only", tomlPath: resolved.tomlPath };

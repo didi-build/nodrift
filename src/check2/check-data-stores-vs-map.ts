@@ -16,6 +16,7 @@ import { parseWranglerConfigFile, type WranglerReadFs } from "./parse-wrangler.j
 import { resolveExplicitWranglerConfigPaths } from "./resolve-explicit-wrangler-configs.js";
 import type { CheckDataStoresVsMapResult } from "./types.js";
 import { formatUnreadableDirSkippedWarning } from "./discovery-warnings.js";
+import { formatWranglerJsoncSkippedWarning } from "./wrangler-json-skip-warning.js";
 import { formatWranglerTomlSkippedWarning } from "./wrangler-toml-warning.js";
 
 export type CheckDataStoresVsMapOptions = {
@@ -71,6 +72,10 @@ function tomlSkipWarnings(paths: readonly string[]): string[] {
   return paths.map(formatWranglerTomlSkippedWarning);
 }
 
+function jsoncSkipWarnings(paths: readonly string[]): string[] {
+  return paths.map(formatWranglerJsoncSkippedWarning);
+}
+
 function unreadableDirWarnings(paths: readonly string[]): string[] {
   return paths.map(formatUnreadableDirSkippedWarning);
 }
@@ -78,9 +83,11 @@ function unreadableDirWarnings(paths: readonly string[]): string[] {
 function discoveryWarnings(
   skippedUnreadableDirs: readonly string[],
   skippedTomlPaths: readonly string[],
+  skippedJsoncPaths: readonly string[],
 ): string[] {
   const warnings = [
     ...unreadableDirWarnings(skippedUnreadableDirs),
+    ...jsoncSkipWarnings(skippedJsoncPaths),
     ...tomlSkipWarnings(skippedTomlPaths),
   ];
   warnings.sort(compareCodeUnits);
@@ -166,6 +173,11 @@ function checkLegacyWranglerDir(
     return fatalResult([fatal(located.tomlPath, TOML_ONLY_FATAL_MESSAGE)]);
   }
 
+  const legacyWarnings =
+    located.kind === "config" && located.skippedConfigPath
+      ? [formatWranglerJsoncSkippedWarning(located.skippedConfigPath)]
+      : [];
+
   if (located.kind === "nothing") {
     if (mapBindings.size > 0) {
       const names = formatMapBindingNames(mapBindings);
@@ -176,11 +188,14 @@ function checkLegacyWranglerDir(
         ),
       ]);
     }
-    return {
-      kind: "ok",
-      outcome: "nothing_to_check",
-      bindingCount: 0,
-    };
+    return attachWarnings(
+      {
+        kind: "ok",
+        outcome: "nothing_to_check",
+        bindingCount: 0,
+      },
+      legacyWarnings,
+    );
   }
 
   const single = checkSingleWranglerConfig(
@@ -189,27 +204,38 @@ function checkLegacyWranglerDir(
     wranglerReadFs,
   );
   if (!isSingleConfigSuccess(single)) {
-    return single;
+    return attachWarnings(single, legacyWarnings);
   }
   if (single.findings.length > 0) {
-    return { kind: "findings", findings: single.findings };
+    return attachWarnings(
+      { kind: "findings", findings: single.findings },
+      legacyWarnings,
+    );
   }
-  return {
-    kind: "ok",
-    outcome: "checked",
-    bindingCount: single.bindingCount,
-  };
+  return attachWarnings(
+    {
+      kind: "ok",
+      outcome: "checked",
+      bindingCount: single.bindingCount,
+    },
+    legacyWarnings,
+  );
 }
 
 function finishDiscoveredRun(
   configPaths: readonly string[],
   skippedUnreadableDirs: readonly string[],
   skippedTomlPaths: readonly string[],
+  skippedJsoncPaths: readonly string[],
   mapBindings: ReadonlySet<string>,
   wranglerReadFs?: WranglerReadFs,
   missingConfigFatal?: FatalError,
 ): CheckDataStoresVsMapResult {
-  const warnings = discoveryWarnings(skippedUnreadableDirs, skippedTomlPaths);
+  const warnings = discoveryWarnings(
+    skippedUnreadableDirs,
+    skippedTomlPaths,
+    skippedJsoncPaths,
+  );
 
   if (configPaths.length === 0) {
     if (skippedTomlPaths.length > 0) {
@@ -302,6 +328,7 @@ function checkDiscoveredWranglerConfigs(
         [],
         [],
         [],
+        [],
         mapBindings,
         wranglerReadFs,
         missingConfigFatal,
@@ -313,6 +340,7 @@ function checkDiscoveredWranglerConfigs(
     }
     return finishDiscoveredRun(
       resolved.configPaths,
+      [],
       [],
       [],
       mapBindings,
@@ -331,6 +359,7 @@ function checkDiscoveredWranglerConfigs(
     discovered.configPaths,
     discovered.skippedUnreadableDirs,
     discovered.skippedTomlPaths,
+    discovered.skippedJsoncPaths,
     mapBindings,
     wranglerReadFs,
     missingConfigFatal,
