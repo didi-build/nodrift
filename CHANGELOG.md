@@ -10,14 +10,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ### Added
 
-- **Check 2 multi-config discovery:** `nodrift check` walks from the configured `wrangler` search root (default `.`) for `wrangler.json` and `wrangler.jsonc` (one file per directory; see **Changed** above when both exist), skipping `node_modules` and common build or VCS directories. Nested worker configs are included. Each in-scope binding finding names the config file it came from.
+- **Check 2 multi-config discovery:** `nodrift check` walks from the configured `wrangler` search root (default `.`) for `wrangler.json` and `wrangler.jsonc` (one file per directory; see **Changed** below when both exist), skipping `node_modules` and common build or VCS directories. Nested worker configs are included. Each in-scope binding finding names the config file it came from.
 - **`wranglerConfigs` in `nodrift.config.json`:** optional list of Wrangler JSON/JSONC paths (relative to the repo root). When set, discovery is skipped and only those files are checked.
 - **Skipped `wrangler.toml` warnings:** when discovery finds at least one `wrangler.json` or `wrangler.jsonc` and also finds `wrangler.toml`, `nodrift check` prints `wrangler.toml is unsupported, skipped: <path>` on stdout for each TOML file (not a failure).
 
 ### Changed
 
-- **Check 2 JSON vs JSONC precedence:** when a directory has both `wrangler.json` and `wrangler.jsonc`, `nodrift check` uses `wrangler.json` (Wrangler order) and prints `wrangler.jsonc skipped: <path>` on stdout.
-- **`wrangler` config key (Check 2):** now the **search root** for discovering Wrangler JSON/JSONC configs, not a single directory with one resolved file. A search root that points at one directory still checks that directory's config; discovery additionally finds nested configs. The library `checkDataStoresVsMap({ wranglerDir })` option is unchanged.
+- **Check 2 JSON vs JSONC precedence:** when a directory has both `wrangler.json` and `wrangler.jsonc`, `nodrift check` uses `wrangler.json` (Wrangler order) and prints `wrangler.jsonc skipped: <path>` on stdout. The library `checkDataStoresVsMap({ wranglerDir })` entry point uses the same per-directory choice and warning.
+- **`wrangler` config key (Check 2):** now the **search root** for discovering Wrangler JSON/JSONC configs, not a single directory with one resolved file. A search root that points at one directory still checks that directory's config; discovery additionally finds nested configs.
 - **`wrangler.toml` during discovery:** if the search finds no JSON/JSONC configs but does find `wrangler.toml`, Check 2 exits `2` (same fatal as amendment 7). Warnings apply only when JSON/JSONC configs are also present.
 - **`wranglerConfigs`:** when the key is present in `nodrift.config.json` (including `[]`), discovery is skipped; `wrangler` is ignored with a stdout warning when it is not `.`.
 - Check 2 binding diagnostics may include findings from more than one Wrangler config in the same run.

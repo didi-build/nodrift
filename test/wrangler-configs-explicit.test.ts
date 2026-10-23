@@ -123,6 +123,38 @@ describe("wranglerConfigs explicit mode", () => {
     expect(result.kind).toBe("findings");
   });
 
+  it("checks both json and jsonc when both paths are listed explicitly", () => {
+    const repoRoot = makeRoot();
+    const dir = join(repoRoot, "w");
+    mkdirSync(dir, { recursive: true });
+    const jsonPath = join(dir, "wrangler.json");
+    const jsoncPath = join(dir, "wrangler.jsonc");
+    writeFileSync(
+      jsonPath,
+      JSON.stringify({ images: { binding: "EXPLICIT_JSON" } }),
+      "utf8",
+    );
+    writeFileSync(
+      jsoncPath,
+      JSON.stringify({ images: { binding: "EXPLICIT_JSONC" } }),
+      "utf8",
+    );
+    writeFileSync(join(repoRoot, "data-map.yml"), minimalMap, "utf8");
+    const result = checkDataStoresVsMap({
+      mapFilePath: join(repoRoot, "data-map.yml"),
+      repoRoot,
+      wranglerConfigsExplicit: true,
+      wranglerConfigPaths: [jsonPath, jsoncPath],
+    });
+    expect(result.kind).toBe("findings");
+    if (result.kind === "findings") {
+      expect(result.findings).toHaveLength(2);
+      const files = result.findings.map((f) => f.file).sort();
+      expect(files).toEqual([jsonPath, jsoncPath].sort());
+    }
+    expect(result.warnings ?? []).toEqual([]);
+  });
+
   it("prints a warning when wrangler is ignored because wranglerConfigs is set", () => {
     const root = makeRoot();
     mkdirSync(join(root, "docs/privacy"), { recursive: true });
