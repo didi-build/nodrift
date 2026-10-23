@@ -152,6 +152,24 @@ other_items:
     expect(result.stdout).toContain("wrangler.jsonc");
   });
 
+  it("prints wrangler.jsonc skipped warning on stdout during discovery", () => {
+    const root = tempRoot();
+    mkdirSync(join(root, "docs/privacy"), { recursive: true });
+    mkdirSync(join(root, "workers/foo"), { recursive: true });
+    writeFileSync(
+      join(root, "docs/privacy/data-map.yml"),
+      "schema_version: 1\n",
+      "utf8",
+    );
+    writeFileSync(join(root, "workers/foo/wrangler.json"), "{}", "utf8");
+    writeFileSync(join(root, "workers/foo/wrangler.jsonc"), "{}", "utf8");
+    const skipped = `wrangler.jsonc skipped: ${join(root, "workers/foo/wrangler.jsonc")}`;
+    const result = runCli(root, ["check"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(skipped);
+    expect(result.stderr).not.toContain(skipped);
+  });
+
   it("prints wrangler.toml skipped warning on stdout during discovery", () => {
     const root = tempRoot();
     mkdirSync(join(root, "docs/privacy"), { recursive: true });

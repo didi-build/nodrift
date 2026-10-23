@@ -688,6 +688,26 @@ other_items:
       }
     });
 
+    it("prefers wrangler.json over wrangler.jsonc for wranglerDir when both exist", () => {
+      const wranglerDir = makeWranglerDir({
+        "wrangler.json": JSON.stringify({ images: { binding: "LEGACY_JSON" } }),
+        "wrangler.jsonc": JSON.stringify({ images: { binding: "LEGACY_JSONC" } }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        wranglerDir,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        expect(result.findings[0].file).toBe(join(wranglerDir, "wrangler.json"));
+        expect(result.findings[0].message).toContain("LEGACY_JSON");
+      }
+      expect(result.warnings).toContain(
+        `wrangler.jsonc skipped: ${join(wranglerDir, "wrangler.jsonc")}`,
+      );
+    });
+
     it("prefers wrangler.jsonc when both jsonc and toml exist", () => {
       const wranglerDir = makeWranglerDir({
         "wrangler.jsonc": JSON.stringify({ images: { binding: "IMAGES" } }),
@@ -1074,13 +1094,14 @@ id = "abc"
       }
     });
 
-    it("prefers wrangler.jsonc over wrangler.json in a nested directory", () => {
+    it("prefers wrangler.json over wrangler.jsonc in a nested directory", () => {
+      const apiDir = join("workers", "api");
       const repoRoot = makeRepoTree({
         "wrangler.jsonc": "{}",
-        "workers/api/wrangler.json": JSON.stringify({
+        [`${apiDir}/wrangler.json`]: JSON.stringify({
           images: { binding: "FROM_JSON" },
         }),
-        "workers/api/wrangler.jsonc": JSON.stringify({
+        [`${apiDir}/wrangler.jsonc`]: JSON.stringify({
           images: { binding: "FROM_JSONC" },
         }),
       });
@@ -1093,11 +1114,106 @@ id = "abc"
       expect(result.kind).toBe("findings");
       if (result.kind === "findings") {
         expect(result.findings).toHaveLength(1);
-        expect(result.findings[0].file).toBe(
-          join(repoRoot, "workers/api/wrangler.jsonc"),
-        );
-        expect(result.findings[0].message).toContain("FROM_JSONC");
+        expect(result.findings[0].file).toBe(join(repoRoot, apiDir, "wrangler.json"));
+        expect(result.findings[0].message).toContain("FROM_JSON");
       }
+      expect(result.warnings).toContain(
+        `wrangler.jsonc skipped: ${join(repoRoot, apiDir, "wrangler.jsonc")}`,
+      );
+    });
+
+    it("checks only wrangler.json when jsonc is absent in a directory", () => {
+      const repoRoot = makeRepoTree({
+        "workers/only-json/wrangler.json": JSON.stringify({
+          images: { binding: "ONLY_JSON" },
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        expect(result.findings[0].file).toBe(
+          join(repoRoot, "workers/only-json/wrangler.json"),
+        );
+        expect(result.findings[0].message).toContain("ONLY_JSON");
+      }
+      expect(result.warnings ?? []).toEqual([]);
+    });
+
+    it("checks only wrangler.jsonc when json is absent in a directory", () => {
+      const repoRoot = makeRepoTree({
+        "workers/only-jsonc/wrangler.jsonc": JSON.stringify({
+          images: { binding: "ONLY_JSONC" },
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        expect(result.findings[0].file).toBe(
+          join(repoRoot, "workers/only-jsonc/wrangler.jsonc"),
+        );
+        expect(result.findings[0].message).toContain("ONLY_JSONC");
+      }
+      expect(result.warnings ?? []).toEqual([]);
+    });
+
+    it("prints one wrangler.jsonc skipped warning per directory when both json files exist", () => {
+      const repoRoot = makeRepoTree({
+        "workers/a/wrangler.json": JSON.stringify({
+          images: { binding: "A_JSON" },
+        }),
+        "workers/a/wrangler.jsonc": "{}",
+        "workers/b/wrangler.json": JSON.stringify({
+          images: { binding: "B_JSON" },
+        }),
+        "workers/b/wrangler.jsonc": "{}",
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.warnings).toEqual([
+        `wrangler.jsonc skipped: ${join(repoRoot, "workers/a/wrangler.jsonc")}`,
+        `wrangler.jsonc skipped: ${join(repoRoot, "workers/b/wrangler.jsonc")}`,
+      ]);
+    });
+
+    it("uses wrangler.json with jsonc and toml warnings in discovery when all three exist", () => {
+      const mixedDir = join("workers", "mixed");
+      const repoRoot = makeRepoTree({
+        [`${mixedDir}/wrangler.json`]: JSON.stringify({
+          images: { binding: "MIXED_JSON" },
+        }),
+        [`${mixedDir}/wrangler.jsonc`]: "{}",
+        [`${mixedDir}/wrangler.toml`]: 'name = "x"\n',
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).not.toBe("fatal");
+      if (result.kind === "findings") {
+        expect(result.findings[0].file).toBe(join(repoRoot, mixedDir, "wrangler.json"));
+      }
+      expect(result.warnings).toContain(
+        `wrangler.jsonc skipped: ${join(repoRoot, mixedDir, "wrangler.jsonc")}`,
+      );
+      expect(result.warnings).toContain(
+        `wrangler.toml is unsupported, skipped: ${join(repoRoot, mixedDir, "wrangler.toml")}`,
+      );
     });
 
     it("orders findings deterministically by file, code, and path", () => {

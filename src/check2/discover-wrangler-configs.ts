@@ -60,6 +60,7 @@ export type DiscoverWranglerConfigsResult =
       ok: true;
       configPaths: string[];
       skippedTomlPaths: string[];
+      skippedJsoncPaths: string[];
       skippedUnreadableDirs: string[];
     }
   | { ok: false; fatal: FatalError };
@@ -89,6 +90,7 @@ export function discoverWranglerConfigPaths(
 ): DiscoverWranglerConfigsResult {
   const configPaths: string[] = [];
   const skippedTomlPaths: string[] = [];
+  const skippedJsoncPaths: string[] = [];
   const skippedUnreadableDirs: string[] = [];
   const seenUnreadableDirs = new Set<string>();
   const seenConfigCanonical = new Set<string>();
@@ -139,7 +141,13 @@ export function discoverWranglerConfigPaths(
       }
       if (isPermissionError(err)) {
         noteUnreadableDir(dir);
-        return { ok: true, configPaths, skippedTomlPaths, skippedUnreadableDirs };
+        return {
+          ok: true,
+          configPaths,
+          skippedTomlPaths,
+          skippedJsoncPaths,
+          skippedUnreadableDirs,
+        };
       }
       return {
         ok: false,
@@ -157,6 +165,9 @@ export function discoverWranglerConfigPaths(
     const resolved = resolveWranglerConfigInDir(dir, names);
     if (resolved.kind === "config") {
       addConfig(resolved.configPath);
+      if (resolved.skippedConfigPath) {
+        skippedJsoncPaths.push(resolved.skippedConfigPath);
+      }
     }
 
     for (const name of names) {
@@ -189,7 +200,13 @@ export function discoverWranglerConfigPaths(
       }
     }
 
-    return { ok: true, configPaths, skippedTomlPaths, skippedUnreadableDirs };
+    return {
+      ok: true,
+      configPaths,
+      skippedTomlPaths,
+      skippedJsoncPaths,
+      skippedUnreadableDirs,
+    };
   }
 
   const walked = walk(searchRoot);
@@ -199,8 +216,15 @@ export function discoverWranglerConfigPaths(
 
   configPaths.sort(compareCodeUnits);
   skippedTomlPaths.sort(compareCodeUnits);
+  skippedJsoncPaths.sort(compareCodeUnits);
   skippedUnreadableDirs.sort(compareCodeUnits);
-  return { ok: true, configPaths, skippedTomlPaths, skippedUnreadableDirs };
+  return {
+    ok: true,
+    configPaths,
+    skippedTomlPaths,
+    skippedJsoncPaths,
+    skippedUnreadableDirs,
+  };
 }
 
 const WRANGLER_CONFIG_BASENAMES = new Set(["wrangler.json", "wrangler.jsonc"]);
