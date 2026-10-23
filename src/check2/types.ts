@@ -19,11 +19,13 @@ export type CheckDataStoresVsMapOk = {
   kind: "ok";
   outcome: "checked" | "nothing_to_check";
   bindingCount: number;
+  warnings?: readonly string[];
 };
 
 export type CheckDataStoresVsMapFindings = {
   kind: "findings";
   findings: Finding[];
+  warnings?: readonly string[];
 };
 
 export type CheckDataStoresVsMapFatal = {
@@ -31,6 +33,7 @@ export type CheckDataStoresVsMapFatal = {
   /** First fatal (stable sort by config path). */
   fatal: FatalError;
   fatals: FatalError[];
+  warnings?: readonly string[];
 };
 
 export type CheckDataStoresVsMapResult =

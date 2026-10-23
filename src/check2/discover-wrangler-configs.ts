@@ -44,18 +44,19 @@ const defaultDiscoverFs: DiscoverWranglerFs = {
 };
 
 export type DiscoverWranglerConfigsResult =
-  { ok: true; configPaths: string[] } | { ok: false; fatal: FatalError };
+  | { ok: true; configPaths: string[]; skippedTomlPaths: string[] }
+  | { ok: false; fatal: FatalError };
 
 /**
- * Walks `searchRoot` and returns one config path per directory that contains a Wrangler file.
- * TOML configs are included when `allowToml` is true.
+ * Walks `searchRoot` and returns one JSON/JSONC config path per directory that contains one.
+ * Every `wrangler.toml` found is listed in `skippedTomlPaths` for warning output.
  */
 export function discoverWranglerConfigPaths(
   searchRoot: string,
-  allowToml: boolean,
   fs: DiscoverWranglerFs = defaultDiscoverFs,
 ): DiscoverWranglerConfigsResult {
   const configPaths: string[] = [];
+  const skippedTomlPaths: string[] = [];
 
   function walk(dir: string): DiscoverWranglerConfigsResult {
     let names: string[];
@@ -80,7 +81,11 @@ export function discoverWranglerConfigPaths(
       };
     }
 
-    const resolved = resolveWranglerConfigInDir(dir, names, allowToml);
+    if (names.includes("wrangler.toml")) {
+      skippedTomlPaths.push(join(dir, "wrangler.toml"));
+    }
+
+    const resolved = resolveWranglerConfigInDir(dir, names);
     if (resolved.kind === "config") {
       configPaths.push(resolved.configPath);
     }
@@ -105,7 +110,7 @@ export function discoverWranglerConfigPaths(
       }
     }
 
-    return { ok: true, configPaths };
+    return { ok: true, configPaths, skippedTomlPaths };
   }
 
   const walked = walk(searchRoot);
@@ -114,14 +119,11 @@ export function discoverWranglerConfigPaths(
   }
 
   configPaths.sort(compareCodeUnits);
-  return { ok: true, configPaths };
+  skippedTomlPaths.sort(compareCodeUnits);
+  return { ok: true, configPaths, skippedTomlPaths };
 }
 
-const WRANGLER_CONFIG_BASENAMES = new Set([
-  "wrangler.json",
-  "wrangler.jsonc",
-  "wrangler.toml",
-]);
+const WRANGLER_CONFIG_BASENAMES = new Set(["wrangler.json", "wrangler.jsonc"]);
 
 export function isWranglerConfigBasename(name: string): boolean {
   return WRANGLER_CONFIG_BASENAMES.has(name);

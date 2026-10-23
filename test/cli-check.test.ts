@@ -97,6 +97,24 @@ describe("nodrift check CLI", () => {
     expect(result.stdout).toContain("binding_not_in_map");
   });
 
+  it("prints wrangler.toml skipped warning on stdout during discovery", () => {
+    const root = tempRoot();
+    mkdirSync(join(root, "docs/privacy"), { recursive: true });
+    mkdirSync(join(root, "workers/foo"), { recursive: true });
+    writeFileSync(
+      join(root, "docs/privacy/data-map.yml"),
+      "schema_version: 1\n",
+      "utf8",
+    );
+    writeFileSync(join(root, "wrangler.jsonc"), "{}", "utf8");
+    writeFileSync(join(root, "workers/foo/wrangler.toml"), 'name = "x"\n', "utf8");
+    const result = runCli(root, ["check"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      `wrangler.toml is unsupported, skipped: ${join(root, "workers/foo/wrangler.toml")}`,
+    );
+  });
+
   it("passes on empty project with minimal map", () => {
     const root = tempRoot();
     mkdirSync(join(root, "docs/privacy"), { recursive: true });

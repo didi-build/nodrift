@@ -183,6 +183,11 @@ export function runCheck(
   }
   lines.push(formatCheckStepLine("check 1 (map vs migrations)", check1Status(check1)));
   lines.push(formatCheckStepLine("check 2 (data stores vs map)", check2Status(check2)));
+  if (check2.warnings) {
+    for (const warning of check2.warnings) {
+      lines.push(warning);
+    }
+  }
 
   for (const fatal of fatals) {
     lines.push(formatFatal(fatal));

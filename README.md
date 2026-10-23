@@ -236,7 +236,7 @@ Library entry points: `checkDataStoresVsMap` with `repoRoot` (and optional `wran
 
 **Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config. **`durable_objects` bindings fail `check`** instead of being compared (see [Unsupported Wrangler configs](#unsupported-wrangler-configs-fail-check)).
 
-**Wrangler config discovery (CLI):** from the configured `wrangler` search directory (default `.`), Check 2 walks the tree and checks every directory that contains a Wrangler config. Per directory: `wrangler.jsonc`, then `wrangler.json`, then `wrangler.toml`. Skipped directory names include `node_modules`, `dist`, `coverage`, `test-results`, `.git`, `.next`, `.open-next`, and other common build or cache folders.
+**Wrangler config discovery (CLI):** the `wrangler` key is the **search root** (default `.`). Check 2 walks that tree and checks every directory that contains `wrangler.jsonc` or `wrangler.json` (`wrangler.jsonc` wins when both exist). A search root that points at a single worker directory still checks that directory; discovery adds nested configs elsewhere under the root. Skipped directory names include `node_modules`, `dist`, `coverage`, `test-results`, `.git`, `.next`, `.open-next`, and other common build or cache folders. Any `wrangler.toml` found during discovery is **not** checked; `nodrift check` prints `wrangler.toml is unsupported, skipped: <path>` on stdout.
 
 **Explicit list:** set `wranglerConfigs` in `nodrift.config.json` to an array of config file paths (relative to the repo root). Discovery is skipped; only those files are checked.
 
@@ -295,14 +295,14 @@ Missing `nodrift.config.json` is fine (zero config). `--config <path>` must exis
 
 **Defaults** (match [`we-met`](https://github.com/didi-build/we-met)):
 
-| Key               | Default                          | Meaning                                                            |
-| ----------------- | -------------------------------- | ------------------------------------------------------------------ |
-| `map`             | `docs/privacy/data-map.yml`      | Data map file                                                      |
-| `subprocessors`   | `docs/privacy/subprocessors.yml` | Subprocessors file                                                 |
-| `migrations`      | `migrations`                     | Migrations **directory**                                           |
-| `wrangler`        | `.`                              | Check 2 **search root** for discovering Wrangler configs           |
-| `wranglerConfigs` | `[]`                             | Optional explicit Wrangler config paths (skips discovery when set) |
-| `ignoreTables`    | `[]`                             | Extra tables excluded from Check 1 and migration scaffolding       |
+| Key               | Default                          | Meaning                                                             |
+| ----------------- | -------------------------------- | ------------------------------------------------------------------- |
+| `map`             | `docs/privacy/data-map.yml`      | Data map file                                                       |
+| `subprocessors`   | `docs/privacy/subprocessors.yml` | Subprocessors file                                                  |
+| `migrations`      | `migrations`                     | Migrations **directory**                                            |
+| `wrangler`        | `.`                              | Check 2 **search root** for discovering JSON/JSONC Wrangler configs |
+| `wranglerConfigs` | `[]`                             | Optional explicit Wrangler config paths (skips discovery when set)  |
+| `ignoreTables`    | `[]`                             | Extra tables excluded from Check 1 and migration scaffolding        |
 
 Paths are resolved with `path.resolve(repoRoot, value)` so **absolute paths** in the config work as-is.
 

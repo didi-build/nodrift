@@ -1028,7 +1028,7 @@ other_items: []
       }
     });
 
-    it("checks wrangler.toml when discovered", () => {
+    it("returns warnings for discovered wrangler.toml files", () => {
       const repoRoot = makeRepoTree({
         "wrangler.jsonc": "{}",
         "workers/kv-consumer/wrangler.toml": `name = "kv-consumer"
@@ -1044,12 +1044,14 @@ id = "abc"
         repoRoot,
         wranglerSearchDir: repoRoot,
       });
-      expect(result.kind).toBe("findings");
-      if (result.kind === "findings") {
-        const tomlFinding = result.findings.find((f) => f.message.includes("TOML_KV"));
-        expect(tomlFinding?.file).toBe(
-          join(repoRoot, "workers/kv-consumer/wrangler.toml"),
-        );
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.warnings).toEqual([
+          `wrangler.toml is unsupported, skipped: ${join(
+            repoRoot,
+            "workers/kv-consumer/wrangler.toml",
+          )}`,
+        ]);
       }
     });
 

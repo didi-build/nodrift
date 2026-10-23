@@ -63,7 +63,7 @@ export function locateWranglerConfig(
     };
   }
 
-  const resolved = resolveWranglerConfigInDir(wranglerDir, names, false);
+  const resolved = resolveWranglerConfigInDir(wranglerDir, names);
   if (resolved.kind === "config") {
     return { ok: true, kind: "config", configPath: resolved.configPath };
   }

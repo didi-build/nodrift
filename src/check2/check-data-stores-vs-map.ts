@@ -15,6 +15,7 @@ import {
 import { parseWranglerConfigFile, type WranglerReadFs } from "./parse-wrangler.js";
 import { resolveExplicitWranglerConfigPaths } from "./resolve-explicit-wrangler-configs.js";
 import type { CheckDataStoresVsMapResult } from "./types.js";
+import { formatWranglerTomlSkippedWarning } from "./wrangler-toml-warning.js";
 
 export type CheckDataStoresVsMapOptions = {
   mapFilePath: string;
@@ -67,8 +68,25 @@ function sortFindings(findings: Finding[]): Finding[] {
   });
 }
 
-function fatalResult(fatals: FatalError[]): CheckDataStoresVsMapResult {
-  return { kind: "fatal", fatal: fatals[0], fatals };
+function tomlSkipWarnings(paths: readonly string[]): string[] {
+  return paths.map(formatWranglerTomlSkippedWarning);
+}
+
+function attachWarnings<T extends CheckDataStoresVsMapResult>(
+  result: T,
+  warnings: readonly string[],
+): T {
+  if (warnings.length === 0) {
+    return result;
+  }
+  return { ...result, warnings };
+}
+
+function fatalResult(
+  fatals: FatalError[],
+  warnings: readonly string[] = [],
+): CheckDataStoresVsMapResult {
+  return attachWarnings({ kind: "fatal", fatal: fatals[0], fatals }, warnings);
 }
 
 type SingleConfigSuccess = {
@@ -182,6 +200,7 @@ function checkDiscoveredWranglerConfigs(
   }
 
   let configPaths: string[];
+  let warnings: string[] = [];
   if (wranglerConfigPaths && wranglerConfigPaths.length > 0) {
     const resolved = resolveExplicitWranglerConfigPaths(wranglerConfigPaths);
     if (!resolved.ok) {
@@ -190,29 +209,36 @@ function checkDiscoveredWranglerConfigs(
     configPaths = resolved.configPaths;
   } else {
     const searchRoot = wranglerSearchDir ?? repoRoot;
-    const discovered = discoverWranglerConfigPaths(searchRoot, true);
+    const discovered = discoverWranglerConfigPaths(searchRoot);
     if (!discovered.ok) {
       return fatalResult([discovered.fatal]);
     }
     configPaths = discovered.configPaths;
+    warnings = tomlSkipWarnings(discovered.skippedTomlPaths);
   }
 
   if (configPaths.length === 0) {
     if (mapBindings.size > 0) {
       const names = formatMapBindingNames(mapBindings);
       const searchLabel = wranglerSearchDir ?? repoRoot;
-      return fatalResult([
-        fatal(
-          searchLabel,
-          `the map references bindings (${names}) but no Wrangler config was found under ${searchLabel}; check the \`wrangler\` path or set \`wranglerConfigs\``,
-        ),
-      ]);
+      return fatalResult(
+        [
+          fatal(
+            searchLabel,
+            `the map references bindings (${names}) but no Wrangler config was found under ${searchLabel}; check the \`wrangler\` path or set \`wranglerConfigs\``,
+          ),
+        ],
+        warnings,
+      );
     }
-    return {
-      kind: "ok",
-      outcome: "nothing_to_check",
-      bindingCount: 0,
-    };
+    return attachWarnings(
+      {
+        kind: "ok",
+        outcome: "nothing_to_check",
+        bindingCount: 0,
+      },
+      warnings,
+    );
   }
 
   const allFindings: Finding[] = [];
@@ -234,18 +260,24 @@ function checkDiscoveredWranglerConfigs(
 
   if (fatals.length > 0) {
     fatals.sort((a, b) => compareCodeUnits(a.file, b.file));
-    return fatalResult(fatals);
+    return fatalResult(fatals, warnings);
   }
 
   if (allFindings.length > 0) {
-    return { kind: "findings", findings: sortFindings(allFindings) };
+    return attachWarnings(
+      { kind: "findings", findings: sortFindings(allFindings) },
+      warnings,
+    );
   }
 
-  return {
-    kind: "ok",
-    outcome: "checked",
-    bindingCount,
-  };
+  return attachWarnings(
+    {
+      kind: "ok",
+      outcome: "checked",
+      bindingCount,
+    },
+    warnings,
+  );
 }
 
 export function checkDataStoresVsMap(

@@ -37,7 +37,7 @@ export function resolveExplicitWranglerConfigPaths(
         ok: false,
         fatal: fatal(
           configPath,
-          `Wrangler config path must be named wrangler.json, wrangler.jsonc, or wrangler.toml (got \`${base}\`)`,
+          `Wrangler config path must be named wrangler.json or wrangler.jsonc (got \`${base}\`)`,
         ),
       };
     }
