@@ -27,6 +27,7 @@ describe("parseConfig", () => {
         migrations: "sql",
         wrangler: "cf",
         wranglerConfigs: ["workers/api/wrangler.jsonc"],
+        wranglerConfigsExplicit: true,
         ignoreTables: ["fts_data"],
       },
     });

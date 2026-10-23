@@ -1018,6 +1018,7 @@ other_items: []
       const result = checkDataStoresVsMap({
         mapFilePath: join(mapDir, "data-map.yml"),
         repoRoot,
+        wranglerConfigsExplicit: true,
         wranglerConfigPaths: [join(repoRoot, "wrangler.jsonc")],
       });
       expect(result.kind).toBe("findings");
@@ -1052,6 +1053,111 @@ id = "abc"
             "workers/kv-consumer/wrangler.toml",
           )}`,
         ]);
+      }
+    });
+
+    it("returns fatal when discovery finds only wrangler.toml", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.toml": 'name = "only-toml"\n',
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.message).toContain("wrangler.toml");
+        expect(result.fatal.message).toContain("wrangler.jsonc");
+      }
+    });
+
+    it("prefers wrangler.jsonc over wrangler.json in a nested directory", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.jsonc": "{}",
+        "workers/api/wrangler.json": JSON.stringify({
+          images: { binding: "FROM_JSON" },
+        }),
+        "workers/api/wrangler.jsonc": JSON.stringify({
+          images: { binding: "FROM_JSONC" },
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        expect(result.findings).toHaveLength(1);
+        expect(result.findings[0].file).toBe(
+          join(repoRoot, "workers/api/wrangler.jsonc"),
+        );
+        expect(result.findings[0].message).toContain("FROM_JSONC");
+      }
+    });
+
+    it("orders findings deterministically by file, code, and path", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.jsonc": JSON.stringify({
+          images: { binding: "Z_IMG" },
+          r2_buckets: [{ binding: "A_BUCKET", bucket_name: "b" }],
+        }),
+        "workers/b/wrangler.jsonc": JSON.stringify({
+          kv_namespaces: [{ binding: "M_KV", id: "1" }],
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        const files = result.findings.map((f) => f.file);
+        expect(files).toEqual([...files].sort());
+      }
+    });
+
+    it("discovers configs only under a non-root wrangler search directory", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.jsonc": JSON.stringify({ images: { binding: "ROOT_ONLY" } }),
+        "workers/edge/wrangler.jsonc": JSON.stringify({
+          images: { binding: "EDGE_ONLY" },
+        }),
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: join(repoRoot, "workers/edge"),
+      });
+      expect(result.kind).toBe("findings");
+      if (result.kind === "findings") {
+        expect(result.findings).toHaveLength(1);
+        expect(result.findings[0].file).toBe(
+          join(repoRoot, "workers/edge/wrangler.jsonc"),
+        );
+      }
+    });
+
+    it("returns fatal when a nested config has invalid JSON", () => {
+      const repoRoot = makeRepoTree({
+        "wrangler.jsonc": "{}",
+        "workers/bad/wrangler.jsonc": "{ broken",
+      });
+      const mapDir = makeMapDir(minimalMap);
+      const result = checkDataStoresVsMap({
+        mapFilePath: join(mapDir, "data-map.yml"),
+        repoRoot,
+        wranglerSearchDir: repoRoot,
+      });
+      expect(result.kind).toBe("fatal");
+      if (result.kind === "fatal") {
+        expect(result.fatal.file).toBe(join(repoRoot, "workers/bad/wrangler.jsonc"));
       }
     });
 

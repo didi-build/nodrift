@@ -1,7 +1,6 @@
-import { readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { join, normalize } from "node:path";
 import { fatal, type FatalError } from "../findings.js";
-import type { WranglerConfigFs } from "./locate-wrangler-config.js";
 import { resolveWranglerConfigInDir } from "./resolve-wrangler-config-in-dir.js";
 import { WRANGLER_DISCOVERY_SKIP_DIRS } from "./wrangler-skip-dirs.js";
 
@@ -23,6 +22,14 @@ function isMissingDirError(err: unknown): boolean {
   return false;
 }
 
+function isPermissionError(err: unknown): boolean {
+  if (err && typeof err === "object" && "code" in err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "EACCES" || code === "EPERM";
+  }
+  return false;
+}
+
 function formatErr(err: unknown): string {
   if (err instanceof Error) {
     return err.message;
@@ -30,16 +37,21 @@ function formatErr(err: unknown): string {
   return String(err);
 }
 
-export type DiscoverWranglerFs = WranglerConfigFs & {
-  statSync(path: string): { isDirectory(): boolean };
+export type DiscoverWranglerFs = {
+  readdirSync(path: string): string[];
+  lstatSync(path: string): { isDirectory(): boolean; isSymbolicLink(): boolean };
+  realpathSync(path: string): string;
 };
 
 const defaultDiscoverFs: DiscoverWranglerFs = {
   readdirSync(path) {
     return readdirSync(path);
   },
-  statSync(path) {
-    return statSync(path);
+  lstatSync(path) {
+    return lstatSync(path);
+  },
+  realpathSync(path) {
+    return realpathSync(path);
   },
 };
 
@@ -47,9 +59,24 @@ export type DiscoverWranglerConfigsResult =
   | { ok: true; configPaths: string[]; skippedTomlPaths: string[] }
   | { ok: false; fatal: FatalError };
 
+function canonicalPath(path: string, fs: DiscoverWranglerFs): string {
+  try {
+    return fs.realpathSync(path);
+  } catch {
+    return normalize(path);
+  }
+}
+
+function missingSearchRootFatal(searchRoot: string): FatalError {
+  return fatal(
+    searchRoot,
+    `Wrangler directory not found or not a directory: ${searchRoot}; check the \`wrangler\` path`,
+  );
+}
+
 /**
- * Walks `searchRoot` and returns one JSON/JSONC config path per directory that contains one.
- * Every `wrangler.toml` found is listed in `skippedTomlPaths` for warning output.
+ * Walks `searchRoot` and returns one JSON/JSONC config path per directory (deduped by real path).
+ * Does not follow symbolic links. Every `wrangler.toml` path is listed in `skippedTomlPaths`.
  */
 export function discoverWranglerConfigPaths(
   searchRoot: string,
@@ -57,20 +84,45 @@ export function discoverWranglerConfigPaths(
 ): DiscoverWranglerConfigsResult {
   const configPaths: string[] = [];
   const skippedTomlPaths: string[] = [];
+  const seenConfigCanonical = new Set<string>();
+
+  function addConfig(configPath: string): void {
+    const canon = canonicalPath(configPath, fs);
+    if (seenConfigCanonical.has(canon)) {
+      return;
+    }
+    seenConfigCanonical.add(canon);
+    configPaths.push(configPath);
+  }
 
   function walk(dir: string): DiscoverWranglerConfigsResult {
     let names: string[];
     try {
       names = fs.readdirSync(dir);
     } catch (err) {
-      if (isMissingDirError(err)) {
+      if (dir === searchRoot) {
+        if (isMissingDirError(err)) {
+          return { ok: false, fatal: missingSearchRootFatal(searchRoot) };
+        }
         return {
           ok: false,
           fatal: fatal(
             searchRoot,
-            `Wrangler search path not found or not a directory: ${searchRoot}; check the \`wrangler\` path`,
+            `cannot read Wrangler directory \`${searchRoot}\`: ${formatErr(err)}`,
           ),
         };
+      }
+      if (isMissingDirError(err)) {
+        return {
+          ok: false,
+          fatal: fatal(
+            dir,
+            `cannot read directory \`${dir}\` while discovering Wrangler configs: ${formatErr(err)}`,
+          ),
+        };
+      }
+      if (isPermissionError(err)) {
+        return { ok: true, configPaths, skippedTomlPaths };
       }
       return {
         ok: false,
@@ -87,7 +139,7 @@ export function discoverWranglerConfigPaths(
 
     const resolved = resolveWranglerConfigInDir(dir, names);
     if (resolved.kind === "config") {
-      configPaths.push(resolved.configPath);
+      addConfig(resolved.configPath);
     }
 
     for (const name of names) {
@@ -95,13 +147,22 @@ export function discoverWranglerConfigPaths(
         continue;
       }
       const child = join(dir, name);
-      let st;
+      let lst;
       try {
-        st = fs.statSync(child);
-      } catch {
+        lst = fs.lstatSync(child);
+      } catch (err) {
+        if (isMissingDirError(err)) {
+          continue;
+        }
+        if (isPermissionError(err)) {
+          continue;
+        }
         continue;
       }
-      if (!st.isDirectory()) {
+      if (lst.isSymbolicLink()) {
+        continue;
+      }
+      if (!lst.isDirectory()) {
         continue;
       }
       const childResult = walk(child);

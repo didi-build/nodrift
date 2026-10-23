@@ -80,38 +80,6 @@ function firstParseErrorMessage(text: string, errors: ParseError[]): string {
 export type ParseWranglerResult =
   { ok: true; config: Record<string, unknown> } | { ok: false; fatal: FatalError };
 
-function parseWranglerJsoncText(
-  configPath: string,
-  withoutBom: string,
-): ParseWranglerResult {
-  const errors: ParseError[] = [];
-  const value = parse(withoutBom, errors, {
-    allowTrailingComma: true,
-    disallowComments: false,
-  });
-
-  if (errors.length > 0) {
-    return {
-      ok: false,
-      fatal: fatal(configPath, firstParseErrorMessage(withoutBom, errors)),
-    };
-  }
-
-  if (
-    value === undefined ||
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value)
-  ) {
-    return {
-      ok: false,
-      fatal: fatal(configPath, "Wrangler config root must be a JSON object"),
-    };
-  }
-
-  return { ok: true, config: value as Record<string, unknown> };
-}
-
 export function parseWranglerConfigFile(
   configPath: string,
   fs: WranglerReadFs = defaultFs,
@@ -138,5 +106,30 @@ export function parseWranglerConfigFile(
     };
   }
 
-  return parseWranglerJsoncText(configPath, withoutBom);
+  const errors: ParseError[] = [];
+  const value = parse(withoutBom, errors, {
+    allowTrailingComma: true,
+    disallowComments: false,
+  });
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      fatal: fatal(configPath, firstParseErrorMessage(withoutBom, errors)),
+    };
+  }
+
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return {
+      ok: false,
+      fatal: fatal(configPath, "Wrangler config root must be a JSON object"),
+    };
+  }
+
+  return { ok: true, config: value as Record<string, unknown> };
 }

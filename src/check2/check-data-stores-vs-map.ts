@@ -26,9 +26,11 @@ export type CheckDataStoresVsMapOptions = {
   wranglerDir?: string;
   /** Repository root for discovery or explicit config paths (CLI). */
   repoRoot?: string;
-  /** Absolute paths to Wrangler configs; skips discovery when set. */
+  /** Absolute paths to Wrangler configs; skips discovery when set (including `[]`). */
   wranglerConfigPaths?: readonly string[];
-  /** Directory under `repoRoot` to search (default `.`). Ignored when `wranglerConfigPaths` is set. */
+  /** When true, `wranglerConfigPaths` was set explicitly in config (even if empty). */
+  wranglerConfigsExplicit?: boolean;
+  /** Directory under `repoRoot` to search (default `.`). Ignored when explicit `wranglerConfigs`. */
   wranglerSearchDir?: string;
   /** @internal Test hook for Wrangler directory reads. */
   wranglerConfigFs?: WranglerConfigFs;
@@ -46,23 +48,19 @@ function compareCodeUnits(a: string, b: string): number {
   return 0;
 }
 
-function bindingNameFromFinding(finding: Finding): string {
-  const match = /binding `([^`]+)`/.exec(finding.message);
-  return match?.[1] ?? "";
-}
-
 function sortFindings(findings: Finding[]): Finding[] {
   return [...findings].sort((a, b) => {
     const byFile = compareCodeUnits(a.file, b.file);
     if (byFile !== 0) {
       return byFile;
     }
-    const byBinding = compareCodeUnits(
-      bindingNameFromFinding(a),
-      bindingNameFromFinding(b),
-    );
-    if (byBinding !== 0) {
-      return byBinding;
+    const byCode = compareCodeUnits(a.code, b.code);
+    if (byCode !== 0) {
+      return byCode;
+    }
+    const byPath = compareCodeUnits(a.path, b.path);
+    if (byPath !== 0) {
+      return byPath;
     }
     return compareCodeUnits(a.message, b.message);
   });
@@ -88,6 +86,9 @@ function fatalResult(
 ): CheckDataStoresVsMapResult {
   return attachWarnings({ kind: "fatal", fatal: fatals[0], fatals }, warnings);
 }
+
+const TOML_ONLY_FATAL_MESSAGE =
+  "`wrangler.toml` is not supported in v1; use `wrangler.jsonc`";
 
 type SingleConfigSuccess = {
   ok: true;
@@ -145,12 +146,7 @@ function checkLegacyWranglerDir(
     if ("fatal" in located) {
       return fatalResult([located.fatal]);
     }
-    return fatalResult([
-      fatal(
-        located.tomlPath,
-        "`wrangler.toml` is not supported in v1; use `wrangler.jsonc`",
-      ),
-    ]);
+    return fatalResult([fatal(located.tomlPath, TOML_ONLY_FATAL_MESSAGE)]);
   }
 
   if (located.kind === "nothing") {
@@ -188,59 +184,28 @@ function checkLegacyWranglerDir(
   };
 }
 
-function checkDiscoveredWranglerConfigs(
-  options: CheckDataStoresVsMapOptions,
+function finishDiscoveredRun(
+  configPaths: readonly string[],
+  skippedTomlPaths: readonly string[],
   mapBindings: ReadonlySet<string>,
+  wranglerReadFs?: WranglerReadFs,
+  missingConfigFatal?: FatalError,
 ): CheckDataStoresVsMapResult {
-  const { repoRoot, wranglerConfigPaths, wranglerSearchDir, wranglerReadFs } = options;
-  if (!repoRoot) {
-    return fatalResult([
-      fatal("", "internal error: discovery Check 2 called without repoRoot"),
-    ]);
-  }
-
-  let configPaths: string[];
-  let warnings: string[] = [];
-  if (wranglerConfigPaths && wranglerConfigPaths.length > 0) {
-    const resolved = resolveExplicitWranglerConfigPaths(wranglerConfigPaths);
-    if (!resolved.ok) {
-      return fatalResult([resolved.fatal]);
-    }
-    configPaths = resolved.configPaths;
-  } else {
-    const searchRoot = wranglerSearchDir ?? repoRoot;
-    const discovered = discoverWranglerConfigPaths(searchRoot);
-    if (!discovered.ok) {
-      return fatalResult([discovered.fatal]);
-    }
-    configPaths = discovered.configPaths;
-    warnings = tomlSkipWarnings(discovered.skippedTomlPaths);
-  }
-
   if (configPaths.length === 0) {
-    if (mapBindings.size > 0) {
-      const names = formatMapBindingNames(mapBindings);
-      const searchLabel = wranglerSearchDir ?? repoRoot;
-      return fatalResult(
-        [
-          fatal(
-            searchLabel,
-            `the map references bindings (${names}) but no Wrangler config was found under ${searchLabel}; check the \`wrangler\` path or set \`wranglerConfigs\``,
-          ),
-        ],
-        warnings,
-      );
+    if (skippedTomlPaths.length > 0) {
+      return fatalResult([fatal(skippedTomlPaths[0], TOML_ONLY_FATAL_MESSAGE)]);
     }
-    return attachWarnings(
-      {
-        kind: "ok",
-        outcome: "nothing_to_check",
-        bindingCount: 0,
-      },
-      warnings,
-    );
+    if (mapBindings.size > 0 && missingConfigFatal) {
+      return fatalResult([missingConfigFatal]);
+    }
+    return {
+      kind: "ok",
+      outcome: "nothing_to_check",
+      bindingCount: 0,
+    };
   }
 
+  const warnings = tomlSkipWarnings(skippedTomlPaths);
   const allFindings: Finding[] = [];
   const fatals: FatalError[] = [];
   let bindingCount = 0;
@@ -277,6 +242,71 @@ function checkDiscoveredWranglerConfigs(
       bindingCount,
     },
     warnings,
+  );
+}
+
+function checkDiscoveredWranglerConfigs(
+  options: CheckDataStoresVsMapOptions,
+  mapBindings: ReadonlySet<string>,
+): CheckDataStoresVsMapResult {
+  const {
+    repoRoot,
+    wranglerConfigPaths,
+    wranglerConfigsExplicit,
+    wranglerSearchDir,
+    wranglerReadFs,
+  } = options;
+  if (!repoRoot) {
+    return fatalResult([
+      fatal("", "internal error: discovery Check 2 called without repoRoot"),
+    ]);
+  }
+
+  const searchLabel = wranglerSearchDir ?? repoRoot;
+  const missingConfigFatal =
+    mapBindings.size > 0
+      ? fatal(
+          searchLabel,
+          `the map references bindings (${formatMapBindingNames(mapBindings)}) but no Wrangler config was found under ${searchLabel}; check the \`wrangler\` path or set \`wranglerConfigs\``,
+        )
+      : undefined;
+
+  if (wranglerConfigsExplicit) {
+    const paths = wranglerConfigPaths ?? [];
+    if (paths.length === 0) {
+      return finishDiscoveredRun(
+        [],
+        [],
+        mapBindings,
+        wranglerReadFs,
+        missingConfigFatal,
+      );
+    }
+    const resolved = resolveExplicitWranglerConfigPaths(paths);
+    if (!resolved.ok) {
+      return fatalResult([resolved.fatal]);
+    }
+    return finishDiscoveredRun(
+      resolved.configPaths,
+      [],
+      mapBindings,
+      wranglerReadFs,
+      missingConfigFatal,
+    );
+  }
+
+  const searchRoot = wranglerSearchDir ?? repoRoot;
+  const discovered = discoverWranglerConfigPaths(searchRoot);
+  if (!discovered.ok) {
+    return fatalResult([discovered.fatal]);
+  }
+
+  return finishDiscoveredRun(
+    discovered.configPaths,
+    discovered.skippedTomlPaths,
+    mapBindings,
+    wranglerReadFs,
+    missingConfigFatal,
   );
 }
 

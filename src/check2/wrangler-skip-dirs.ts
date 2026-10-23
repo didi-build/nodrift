@@ -2,9 +2,12 @@
 export const WRANGLER_DISCOVERY_SKIP_DIRS = new Set([
   "node_modules",
   "dist",
+  "build",
   "coverage",
   "test-results",
   ".git",
+  ".svn",
+  ".hg",
   ".next",
   ".open-next",
   ".cache",
@@ -12,4 +15,8 @@ export const WRANGLER_DISCOVERY_SKIP_DIRS = new Set([
   ".vercel",
   ".husky",
   ".nodrift",
+  ".wrangler",
+  "out",
+  ".output",
+  ".svelte-kit",
 ]);
