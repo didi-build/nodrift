@@ -267,24 +267,25 @@ other_items:
 
 **Zero config by default** (paths match [`we-met`](https://github.com/didi-build/we-met) so adoption needs no config file):
 
-| Artifact        | Default path / rule                               |
-| --------------- | ------------------------------------------------- |
-| Data map        | `docs/privacy/data-map.yml`                       |
-| Subprocessors   | `docs/privacy/subprocessors.yml`                  |
-| SQL migrations  | `migrations/*.sql` (sorted by filename)           |
-| Wrangler config | `wrangler.jsonc` if present, else `wrangler.json` |
+| Artifact        | Default path / rule                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Data map        | `docs/privacy/data-map.yml`                                                                                        |
+| Subprocessors   | `docs/privacy/subprocessors.yml`                                                                                   |
+| SQL migrations  | `migrations/*.sql` (sorted by filename)                                                                            |
+| Wrangler config | Recursive discovery under the `wrangler` search root (see [amendment 25](#amendment-25-didi-800)); JSON/JSONC only |
 
 **Optional overrides:** `nodrift.config.json` at the repository root (**strict JSON**, no comments). Unknown keys are **errors**. **`--config <path>`** selects another file.
 
-**Only five keys:**
+**Config keys (see [amendment 25](#amendment-25-didi-800) for Check 2 discovery):**
 
-| Key             | Purpose                                 |
-| --------------- | --------------------------------------- |
-| `map`           | Path to `data-map.yml`                  |
-| `subprocessors` | Path to `subprocessors.yml`             |
-| `migrations`    | Migrations directory                    |
-| `wrangler`      | Path to Wrangler JSON/JSONC             |
-| `ignoreTables`  | Extra table names excluded from Check 1 |
+| Key               | Purpose                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| `map`             | Path to `data-map.yml`                                          |
+| `subprocessors`   | Path to `subprocessors.yml`                                     |
+| `migrations`      | Migrations directory                                            |
+| `wrangler`        | Check 2 search root for discovering Wrangler JSON/JSONC configs |
+| `wranglerConfigs` | Optional explicit Wrangler JSON/JSONC paths (skips discovery)   |
+| `ignoreTables`    | Extra table names excluded from Check 1                         |
 
 Which Wrangler binding types count as data stores for Check 2 is **built in** (not configurable in v1).
 
@@ -453,13 +454,13 @@ Approved by the maintainer on **2026-10-19** (recorded here for implementers; th
 4. **Known limitation (FTS5 on older Node)** — Migrations that create FTS5 virtual tables require **Node 22.16 or newer** for in-memory replay with `node:sqlite`. On **22.13 through 22.15**, replay fails with `no such module: fts5`. `engines.node` remains `>=22.13.0`; consumers with FTS5 migrations should run Check 1 on Node 22.16+.
 5. **Check 2 section scan** — Parse the **top level**, every **`env.<name>`** block, and **`previews`**, taking the **union by binding name** (case-sensitive); each binding remembers every section that declares it.
 6. **Check 2 `multiple_d1_databases`** — More than one `d1_databases` entry in a **single** Wrangler section is a **`multiple_d1_databases`** finding (v1 supports one D1 database per section for Check 1 alignment).
-7. **Check 2 Wrangler file presence** — **`wrangler.toml` only** is a **fatal** in every case. **Missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any other unreadable directory is a **fatal** (`check the \`wrangler\` path`). A readable directory with **no** `wrangler.jsonc`/`wrangler.json` is **`nothing_to_check`** only when **no** `other_items` entry has a **`binding:`**; if the map references bindings but no Wrangler JSON/JSONC file is found, that is a **fatal** listing those binding names.
+7. **Check 2 Wrangler file presence** — _(Superseded for CLI discovery by [amendment 25](#amendment-25-didi-800); still applies to the legacy library `wranglerDir` API.)_ **`wrangler.toml` only** is a **fatal** (exit `2`). **Missing** search root / `wranglerDir`, a **non-directory** path, or an unreadable **search root** is a **fatal** (`check the \`wrangler\` path`). A readable tree with **no** `wrangler.jsonc`/`wrangler.json` is **`nothing_to_check`** only when **no** `other_items` entry has a **`binding:`**; if the map references bindings but no Wrangler JSON/JSONC file is found, that is a **fatal** listing those binding names.
 8. **Check 2 stale bindings** — **No** reverse check in v1 (map `binding:` values with no Wrangler counterpart do not fail Check 2).
 
 Approved by the maintainer on **2026-10-21** (CLI and `init` implementation, [DIDI-671](https://linear.app/didi-build/issue/DIDI-671)):
 
 9. **Build and `bin`** — TypeScript compiles `src/` to `dist/` (`tsconfig.build.json`, `npm run build`). The CLI entry is `dist/cli.js` with `#!/usr/bin/env node` via `package.json` `"bin": { "nodrift": "dist/cli.js" }`. Publishing uses an allowlisted `files` field, `package:check`, and staged OIDC release workflow `release.yml` (see [DIDI-673](https://linear.app/didi-build/issue/DIDI-673)).
-10. **`wrangler` config key** — The `wrangler` value is a **directory** path (default `.`). Check 2 resolves `wrangler.jsonc`, then `wrangler.json`, inside that directory.
+10. **`wrangler` config key** — _(Superseded for CLI Check 2 by [amendment 25](#amendment-25-didi-800); legacy library `wranglerDir` still uses single-directory resolution.)_ The `wrangler` value was a **directory** path (default `.`) with one resolved config file per directory.
 11. **`check` flow** — Load and validate the map once as a gate (fatal → exit `2`, findings → exit `1`, neither check runs). Optionally validate `subprocessors.yml` when the file exists. Run Check 1 and Check 2 independently; aggregate fatals and findings for exit codes.
 12. **CLI output streams** — `check` diagnostics go to **stdout**; usage and config errors go to **stderr**. The CLI sets `process.exitCode` and drains stdout/stderr before exit (no `process.exit` immediately after writes).
 13. **`init` outputs** — Default owned paths: configured `map` and `subprocessors`, `docs/runbooks/breach-response.md`, `docs/privacy/breach-record-template.md`, `docs/runbooks/account-deletion.md`, `SECURITY.md`, optional `.github/pull_request_template.md`, and `.nodrift/manifest.json`.
@@ -480,6 +481,10 @@ Approved by the maintainer on **2026-10-21** (publish pipeline, [DIDI-673](https
 Approved by the maintainer on **2026-10-22** ([DIDI-702](https://linear.app/didi-build/issue/DIDI-702); implemented in [DIDI-712](https://linear.app/didi-build/issue/DIDI-712)):
 
 24. **Unsupported Wrangler configurations** — Per the [DIDI-702 decision](#decision-didi-702): both proposals in [Proposed changes](#proposed-changes-for-maintainer-review) are **deferred** (no current repo uses either). Until first-class support ships, `check` fails with `multiple_d1_databases` or `durable_objects` findings (exit `1`) instead of passing silently; messages name bindings, say **not supported yet by nodrift**, and link ADR 0003. No opt-out in v1.
+
+Approved by the maintainer on **2026-10-23** ([DIDI-800](https://linear.app/didi-build/issue/DIDI-800/nodrift-check-2-scan-every-wrangler-config-in-the-repo-not-just-the)):
+
+25. **Check 2 multi-config discovery (0.2.0):** CLI Check 2 walks the configured **`wrangler` search root** (default `.`) recursively for `wrangler.jsonc` and `wrangler.json` (`wrangler.jsonc` preferred when both exist in the same directory). Symbolic link directories are not followed; config paths are deduped by real path. Skipped directory names include `node_modules`, `dist`, `build`, `coverage`, `test-results`, `.git`, `.svn`, `.hg`, `.next`, `.open-next`, `.cache`, `.turbo`, `.vercel`, `.husky`, `.nodrift`, `.wrangler`, `out`, `.output`, and `.svelte-kit`. Nested directories that cannot be read (`EACCES` / `EPERM`) print `cannot read directory, skipped: <path>` on stdout and are skipped; an unreadable search root remains a **fatal**. Optional **`wranglerConfigs`** lists explicit JSON/JSONC paths relative to the repo root; when that key is present (including `[]`), discovery is skipped and **`wrangler` is ignored** (stdout warning when `wrangler` is not `.`). Equivalent explicit paths (for example `w/wrangler.jsonc` and `./w/wrangler.jsonc`) are deduped silently (first wins). **`wrangler.toml`:** if discovery finds **no** JSON/JSONC config anywhere under the search root but does find `wrangler.toml`, Check 2 is a **fatal** (exit `2`) with the same message as amendment 7. If at least one JSON/JSONC config is found, each `wrangler.toml` path prints `wrangler.toml is unsupported, skipped: <path>` on stdout (warning only). The library `checkDataStoresVsMap({ wranglerDir })` entry point keeps single-directory semantics from amendments 7 and 10.
 
 ---
 

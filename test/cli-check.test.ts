@@ -97,6 +97,79 @@ describe("nodrift check CLI", () => {
     expect(result.stdout).toContain("binding_not_in_map");
   });
 
+  it("reports a nested worker binding missing from the map with its config path", () => {
+    const root = tempRoot();
+    mkdirSync(join(root, "docs/privacy"), { recursive: true });
+    mkdirSync(join(root, "workers/followup-email"), { recursive: true });
+    writeFileSync(
+      join(root, "docs/privacy/data-map.yml"),
+      `schema_version: 1
+d1_tables: {}
+other_items:
+  - id: root
+    binding: ROOT_IMAGES
+    whose: operational
+    data: x
+    purpose: y
+    processors: []
+    retention: r
+`,
+      "utf8",
+    );
+    writeFileSync(
+      join(root, "wrangler.jsonc"),
+      JSON.stringify({ images: { binding: "ROOT_IMAGES" } }),
+      "utf8",
+    );
+    writeFileSync(
+      join(root, "workers/followup-email/wrangler.jsonc"),
+      JSON.stringify({
+        queues: { producers: [{ binding: "NESTED_QUEUE", queue: "q" }] },
+      }),
+      "utf8",
+    );
+    const result = runCli(root, ["check"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("binding_not_in_map");
+    expect(result.stdout).toContain("NESTED_QUEUE");
+    expect(result.stdout).toContain(
+      join(root, "workers/followup-email/wrangler.jsonc"),
+    );
+  });
+
+  it("exits 2 when the search root has only wrangler.toml", () => {
+    const root = tempRoot();
+    mkdirSync(join(root, "docs/privacy"), { recursive: true });
+    writeFileSync(
+      join(root, "docs/privacy/data-map.yml"),
+      "schema_version: 1\n",
+      "utf8",
+    );
+    writeFileSync(join(root, "wrangler.toml"), 'name = "only-toml"\n', "utf8");
+    const result = runCli(root, ["check"]);
+    expect(result.status).toBe(2);
+    expect(result.stdout).toContain("wrangler.toml");
+    expect(result.stdout).toContain("wrangler.jsonc");
+  });
+
+  it("prints wrangler.toml skipped warning on stdout during discovery", () => {
+    const root = tempRoot();
+    mkdirSync(join(root, "docs/privacy"), { recursive: true });
+    mkdirSync(join(root, "workers/foo"), { recursive: true });
+    writeFileSync(
+      join(root, "docs/privacy/data-map.yml"),
+      "schema_version: 1\n",
+      "utf8",
+    );
+    writeFileSync(join(root, "wrangler.jsonc"), "{}", "utf8");
+    writeFileSync(join(root, "workers/foo/wrangler.toml"), 'name = "x"\n', "utf8");
+    const result = runCli(root, ["check"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      `wrangler.toml is unsupported, skipped: ${join(root, "workers/foo/wrangler.toml")}`,
+    );
+  });
+
   it("passes on empty project with minimal map", () => {
     const root = tempRoot();
     mkdirSync(join(root, "docs/privacy"), { recursive: true });

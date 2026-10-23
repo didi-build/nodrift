@@ -15,6 +15,7 @@ describe("parseConfig", () => {
       subprocessors: "custom/sub.yml",
       migrations: "sql",
       wrangler: "cf",
+      wranglerConfigs: ["workers/api/wrangler.jsonc"],
       ignoreTables: ["fts_data"],
     });
     const result = parseConfig(text, file);
@@ -25,6 +26,8 @@ describe("parseConfig", () => {
         subprocessors: "custom/sub.yml",
         migrations: "sql",
         wrangler: "cf",
+        wranglerConfigs: ["workers/api/wrangler.jsonc"],
+        wranglerConfigsExplicit: true,
         ignoreTables: ["fts_data"],
       },
     });

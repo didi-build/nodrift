@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
-import { join } from "node:path";
 import { fatal, type FatalError } from "../findings.js";
+import { resolveWranglerConfigInDir } from "./resolve-wrangler-config-in-dir.js";
 
 export type WranglerConfigFs = {
   readdirSync(path: string): string[];
@@ -63,30 +63,12 @@ export function locateWranglerConfig(
     };
   }
 
-  const hasJsonc = names.includes("wrangler.jsonc");
-  const hasJson = names.includes("wrangler.json");
-  const hasToml = names.includes("wrangler.toml");
-
-  if (hasJsonc) {
-    return {
-      ok: true,
-      kind: "config",
-      configPath: join(wranglerDir, "wrangler.jsonc"),
-    };
+  const resolved = resolveWranglerConfigInDir(wranglerDir, names);
+  if (resolved.kind === "config") {
+    return { ok: true, kind: "config", configPath: resolved.configPath };
   }
-  if (hasJson) {
-    return {
-      ok: true,
-      kind: "config",
-      configPath: join(wranglerDir, "wrangler.json"),
-    };
-  }
-  if (hasToml) {
-    return {
-      ok: false,
-      kind: "toml_only",
-      tomlPath: join(wranglerDir, "wrangler.toml"),
-    };
+  if (resolved.kind === "toml_only") {
+    return { ok: false, kind: "toml_only", tomlPath: resolved.tomlPath };
   }
   return { ok: true, kind: "nothing" };
 }

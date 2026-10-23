@@ -132,14 +132,15 @@ Privacy inventory lives in **`docs/privacy/data-map.yml`** (grouped format, `sch
 
 **Loader API** (`src/`)
 
-| Function                                                                             | Role                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `parseDataMap(text, filePath)`                                                       | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                         |
-| `expandDataMap(map)`                                                                 | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing. |
-| `parseSubprocessors(text, filePath)`                                                 | Light shape check for `subprocessors.yml`.                                                                                                                            |
-| `loadDataMapFile` / `loadSubprocessorsFile`                                          | Thin `readFileSync` wrappers around the parsers.                                                                                                                      |
-| `checkMapVsMigrations({ mapFilePath, migrationsDir, ignoreTables?, schemaReader? })` | Check 1: replay `*.sql` migrations in memory and compare `d1_tables` to the effective schema.                                                                         |
-| `checkDataStoresVsMap({ mapFilePath, wranglerDir })`                                 | Check 2: parse Wrangler JSON/JSONC in `wranglerDir` and verify each in-scope binding is on an `other_items` `binding:`.                                               |
+| Function                                                                                    | Role                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseDataMap(text, filePath)`                                                              | Parse + validate; returns `{ map, findings }` or `{ fatal }`.                                                                                                         |
+| `expandDataMap(map)`                                                                        | Effective entry per D1 column and per `other_item`, with source paths for each field. Columns missing `whose` are omitted — stop on loader findings before comparing. |
+| `parseSubprocessors(text, filePath)`                                                        | Light shape check for `subprocessors.yml`.                                                                                                                            |
+| `loadDataMapFile` / `loadSubprocessorsFile`                                                 | Thin `readFileSync` wrappers around the parsers.                                                                                                                      |
+| `checkMapVsMigrations({ mapFilePath, migrationsDir, ignoreTables?, schemaReader? })`        | Check 1: replay `*.sql` migrations in memory and compare `d1_tables` to the effective schema.                                                                         |
+| `checkDataStoresVsMap({ mapFilePath, wranglerDir })`                                        | Check 2 (legacy): one Wrangler directory, JSON/JSONC precedence, TOML-only fatal.                                                                                     |
+| `checkDataStoresVsMap({ mapFilePath, repoRoot, wranglerSearchDir?, wranglerConfigPaths? })` | Check 2 (CLI): discover configs under `wranglerSearchDir` or check explicit `wranglerConfigPaths`.                                                                    |
 
 **Exit mapping (for the CLI)**
 
@@ -219,7 +220,7 @@ Library entry point: `checkMapVsMigrations` (paths and `ignoreTables` match `nod
 
 ## Check 2: data stores vs map
 
-Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` match config defaults when run via the CLI).
+Library entry points: `checkDataStoresVsMap` with `repoRoot` (and optional `wranglerSearchDir` / `wranglerConfigPaths`) matches the CLI; the `wranglerDir`-only form keeps the original single-directory behavior for callers that pass one directory.
 
 **In-scope Wrangler bindings** (each must appear on at least one `other_items` entry’s **`binding:`** — string or list; one row may cover several names):
 
@@ -235,9 +236,15 @@ Library entry point: `checkDataStoresVsMap` (`mapFilePath` and `wranglerDir` mat
 
 **Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config. **`durable_objects` bindings fail `check`** instead of being compared (see [Unsupported Wrangler configs](#unsupported-wrangler-configs-fail-check)).
 
-**Wrangler file resolution** (in `wranglerDir`): `wrangler.jsonc` first, then `wrangler.json`. **`wrangler.toml` only** is a **fatal** (`use wrangler.jsonc`) in every case. A **missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any **unreadable** directory is a **fatal** naming the path (`check the \`wrangler\` path`).
+**Wrangler config discovery (CLI):** the `wrangler` key is the **search root** (default `.`). Check 2 walks that tree (without following symbolic links) and checks every directory that contains `wrangler.jsonc` or `wrangler.json` (`wrangler.jsonc` wins when both exist). A search root that points at a single worker directory still checks that directory; discovery adds nested configs elsewhere under the root. Skipped directory names include `node_modules`, `dist`, `build`, `coverage`, `test-results`, `.git`, `.svn`, `.hg`, `.next`, `.open-next`, `.cache`, `.turbo`, `.vercel`, `.husky`, `.nodrift`, `.wrangler`, `out`, `.output`, and `.svelte-kit`. Nested directories that cannot be read (`EACCES` / `EPERM`) print `cannot read directory, skipped: <path>` on stdout and are skipped; an unreadable **search root** is still a fatal. If discovery finds **no** JSON/JSONC configs but does find `wrangler.toml`, Check 2 exits `2` (same as a TOML-only legacy directory). When at least one JSON/JSONC config is found, each `wrangler.toml` prints `wrangler.toml is unsupported, skipped: <path>` on stdout and is not checked.
 
-If the directory is readable but has no `wrangler.jsonc` or `wrangler.json`, Check 2 returns **`ok`** with `outcome: "nothing_to_check"` only when no `other_items` entry has a `binding:`. If the map lists any `binding:` but no Wrangler JSON/JSONC file is present, that is a **fatal** listing those binding names.
+**Explicit list:** set `wranglerConfigs` in `nodrift.config.json` to an array of `wrangler.json` / `wrangler.jsonc` paths (relative to the repo root). When this key is present (even as `[]`), discovery is skipped and the `wrangler` search root is ignored (`nodrift check` prints a warning when `wrangler` is not `.`).
+
+**Legacy library API (`wranglerDir` only):** same per-directory precedence for JSON/JSONC, but **`wrangler.toml` only** is still a **fatal** (`use wrangler.jsonc`). A **missing** `wranglerDir`, a **non-directory** `wranglerDir`, or any **unreadable** directory is a **fatal** naming the path (`check the \`wrangler\` path`).
+
+If no Wrangler configs are found (discovery or legacy), Check 2 returns **`ok`** with `outcome: "nothing_to_check"` only when no `other_items` entry has a `binding:`. If the map lists any `binding:` but no config files are found, that is a **fatal** listing those binding names.
+
+Each finding’s `file` field is the Wrangler config path that declared the binding.
 
 JSONC allows comments and trailing commas; a leading UTF-8 BOM is stripped before parse. Parse errors are **fatals** with a JSONC property path (when known), error name, and line/column.
 
@@ -288,13 +295,14 @@ Missing `nodrift.config.json` is fine (zero config). `--config <path>` must exis
 
 **Defaults** (match [`we-met`](https://github.com/didi-build/we-met)):
 
-| Key             | Default                          | Meaning                                                            |
-| --------------- | -------------------------------- | ------------------------------------------------------------------ |
-| `map`           | `docs/privacy/data-map.yml`      | Data map file                                                      |
-| `subprocessors` | `docs/privacy/subprocessors.yml` | Subprocessors file                                                 |
-| `migrations`    | `migrations`                     | Migrations **directory**                                           |
-| `wrangler`      | `.`                              | Wrangler config **directory** (`wrangler.jsonc` / `wrangler.json`) |
-| `ignoreTables`  | `[]`                             | Extra tables excluded from Check 1 and migration scaffolding       |
+| Key               | Default                          | Meaning                                                                                                    |
+| ----------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `map`             | `docs/privacy/data-map.yml`      | Data map file                                                                                              |
+| `subprocessors`   | `docs/privacy/subprocessors.yml` | Subprocessors file                                                                                         |
+| `migrations`      | `migrations`                     | Migrations **directory**                                                                                   |
+| `wrangler`        | `.`                              | Check 2 **search root** for discovering JSON/JSONC Wrangler configs                                        |
+| `wranglerConfigs` | _(unset)_                        | Optional explicit Wrangler config paths; discovery is skipped whenever this key is present (`[]` included) |
+| `ignoreTables`    | `[]`                             | Extra tables excluded from Check 1 and migration scaffolding                                               |
 
 Paths are resolved with `path.resolve(repoRoot, value)` so **absolute paths** in the config work as-is.
 
@@ -305,6 +313,7 @@ Example:
   "map": "docs/privacy/data-map.yml",
   "migrations": "migrations",
   "wrangler": ".",
+  "wranglerConfigs": ["workers/followup-email/wrangler.jsonc"],
   "ignoreTables": ["fts_data"]
 }
 ```

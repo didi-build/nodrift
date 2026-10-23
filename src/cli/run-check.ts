@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { DEFAULT_CONFIG } from "../config/parse-config.js";
 import { fatal } from "../findings.js";
 import { checkMapVsMigrations } from "../check1/check-map-vs-migrations.js";
 import type { CheckMapVsMigrationsResult } from "../check1/types.js";
@@ -105,7 +106,10 @@ function subprocessorsStatus(
   return { kind: "ok", detail: "valid" };
 }
 
-export function runCheck(config: ResolvedNodriftConfig): RunCheckResult {
+export function runCheck(
+  config: ResolvedNodriftConfig,
+  repoRoot: string,
+): RunCheckResult {
   const lines: string[] = [];
   const findings: Finding[] = [];
   const fatals: FatalError[] = [];
@@ -157,12 +161,27 @@ export function runCheck(config: ResolvedNodriftConfig): RunCheckResult {
     findings.push(...check1.findings);
   }
 
+  const check2Warnings: string[] = [];
+  if (config.wranglerConfigsExplicit && config.wrangler !== DEFAULT_CONFIG.wrangler) {
+    check2Warnings.push(
+      `wrangler is ignored when wranglerConfigs is set (wrangler: ${config.wrangler})`,
+    );
+  }
+
   const check2 = checkDataStoresVsMap({
     mapFilePath: config.mapPath,
-    wranglerDir: config.wranglerDir,
+    repoRoot,
+    wranglerSearchDir: config.wranglerDir,
+    wranglerConfigsExplicit: config.wranglerConfigsExplicit,
+    wranglerConfigPaths: config.wranglerConfigsExplicit
+      ? config.wranglerConfigPaths
+      : undefined,
   });
+  if (check2.warnings) {
+    check2Warnings.push(...check2.warnings);
+  }
   if (check2.kind === "fatal") {
-    fatals.push(check2.fatal);
+    fatals.push(...check2.fatals);
   } else if (check2.kind === "findings") {
     findings.push(...check2.findings);
   }
@@ -177,6 +196,9 @@ export function runCheck(config: ResolvedNodriftConfig): RunCheckResult {
   }
   lines.push(formatCheckStepLine("check 1 (map vs migrations)", check1Status(check1)));
   lines.push(formatCheckStepLine("check 2 (data stores vs map)", check2Status(check2)));
+  for (const warning of check2Warnings) {
+    lines.push(warning);
+  }
 
   for (const fatal of fatals) {
     lines.push(formatFatal(fatal));

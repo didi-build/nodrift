@@ -6,6 +6,7 @@ export const CONFIG_KEYS = new Set([
   "subprocessors",
   "migrations",
   "wrangler",
+  "wranglerConfigs",
   "ignoreTables",
 ]);
 
@@ -14,6 +15,8 @@ export const DEFAULT_CONFIG = {
   subprocessors: "docs/privacy/subprocessors.yml",
   migrations: "migrations",
   wrangler: ".",
+  wranglerConfigs: [] as string[],
+  wranglerConfigsExplicit: false,
   ignoreTables: [] as string[],
 };
 
@@ -22,6 +25,9 @@ export type NodriftConfig = {
   subprocessors: string;
   migrations: string;
   wrangler: string;
+  wranglerConfigs: string[];
+  /** True when `wranglerConfigs` was present in the config file (even if `[]`). */
+  wranglerConfigsExplicit: boolean;
   ignoreTables: string[];
 };
 
@@ -164,6 +170,19 @@ export function parseConfig(text: string, filePath: string): ParseConfigResult {
       return wrangler;
     }
     config.wrangler = wrangler.value;
+  }
+
+  if ("wranglerConfigs" in record) {
+    const wranglerConfigs = expectStringArray(
+      filePath,
+      "wranglerConfigs",
+      record.wranglerConfigs,
+    );
+    if (!wranglerConfigs.ok) {
+      return wranglerConfigs;
+    }
+    config.wranglerConfigs = wranglerConfigs.value;
+    config.wranglerConfigsExplicit = true;
   }
 
   if ("ignoreTables" in record) {
