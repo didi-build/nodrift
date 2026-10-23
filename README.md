@@ -236,7 +236,7 @@ Library entry points: `checkDataStoresVsMap` with `repoRoot` (and optional `wran
 
 **Out of scope for Check 2:** new outside vendors (human PR checklist), `services`, `assets`, `vars`, `ratelimits`, `routes`, and other Wrangler binding types. Map rows may still mention rate-limiter **names** in `binding:`; Check 2 only requires coverage for bindings that exist in the Wrangler config. **`durable_objects` bindings fail `check`** instead of being compared (see [Unsupported Wrangler configs](#unsupported-wrangler-configs-fail-check)).
 
-**Wrangler config discovery (CLI):** the `wrangler` key is the **search root** (default `.`). Check 2 walks that tree (without following symbolic links) and checks every directory that contains `wrangler.jsonc` or `wrangler.json` (`wrangler.jsonc` wins when both exist). A search root that points at a single worker directory still checks that directory; discovery adds nested configs elsewhere under the root. Skipped directory names include `node_modules`, `dist`, `build`, `coverage`, `test-results`, `.git`, `.svn`, `.hg`, `.next`, `.open-next`, `.cache`, `.turbo`, `.vercel`, `.husky`, `.nodrift`, `.wrangler`, `out`, `.output`, and `.svelte-kit`. If discovery finds **no** JSON/JSONC configs but does find `wrangler.toml`, Check 2 exits `2` (same as a TOML-only legacy directory). When at least one JSON/JSONC config is found, each `wrangler.toml` prints `wrangler.toml is unsupported, skipped: <path>` on stdout and is not checked.
+**Wrangler config discovery (CLI):** the `wrangler` key is the **search root** (default `.`). Check 2 walks that tree (without following symbolic links) and checks every directory that contains `wrangler.jsonc` or `wrangler.json` (`wrangler.jsonc` wins when both exist). A search root that points at a single worker directory still checks that directory; discovery adds nested configs elsewhere under the root. Skipped directory names include `node_modules`, `dist`, `build`, `coverage`, `test-results`, `.git`, `.svn`, `.hg`, `.next`, `.open-next`, `.cache`, `.turbo`, `.vercel`, `.husky`, `.nodrift`, `.wrangler`, `out`, `.output`, and `.svelte-kit`. Nested directories that cannot be read (`EACCES` / `EPERM`) print `cannot read directory, skipped: <path>` on stdout and are skipped; an unreadable **search root** is still a fatal. If discovery finds **no** JSON/JSONC configs but does find `wrangler.toml`, Check 2 exits `2` (same as a TOML-only legacy directory). When at least one JSON/JSONC config is found, each `wrangler.toml` prints `wrangler.toml is unsupported, skipped: <path>` on stdout and is not checked.
 
 **Explicit list:** set `wranglerConfigs` in `nodrift.config.json` to an array of `wrangler.json` / `wrangler.jsonc` paths (relative to the repo root). When this key is present (even as `[]`), discovery is skipped and the `wrangler` search root is ignored (`nodrift check` prints a warning when `wrangler` is not `.`).
 
@@ -295,14 +295,14 @@ Missing `nodrift.config.json` is fine (zero config). `--config <path>` must exis
 
 **Defaults** (match [`we-met`](https://github.com/didi-build/we-met)):
 
-| Key               | Default                          | Meaning                                                             |
-| ----------------- | -------------------------------- | ------------------------------------------------------------------- |
-| `map`             | `docs/privacy/data-map.yml`      | Data map file                                                       |
-| `subprocessors`   | `docs/privacy/subprocessors.yml` | Subprocessors file                                                  |
-| `migrations`      | `migrations`                     | Migrations **directory**                                            |
-| `wrangler`        | `.`                              | Check 2 **search root** for discovering JSON/JSONC Wrangler configs |
-| `wranglerConfigs` | `[]`                             | Optional explicit Wrangler config paths (skips discovery when set)  |
-| `ignoreTables`    | `[]`                             | Extra tables excluded from Check 1 and migration scaffolding        |
+| Key               | Default                          | Meaning                                                                                                    |
+| ----------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `map`             | `docs/privacy/data-map.yml`      | Data map file                                                                                              |
+| `subprocessors`   | `docs/privacy/subprocessors.yml` | Subprocessors file                                                                                         |
+| `migrations`      | `migrations`                     | Migrations **directory**                                                                                   |
+| `wrangler`        | `.`                              | Check 2 **search root** for discovering JSON/JSONC Wrangler configs                                        |
+| `wranglerConfigs` | _(unset)_                        | Optional explicit Wrangler config paths; discovery is skipped whenever this key is present (`[]` included) |
+| `ignoreTables`    | `[]`                             | Extra tables excluded from Check 1 and migration scaffolding                                               |
 
 Paths are resolved with `path.resolve(repoRoot, value)` so **absolute paths** in the config work as-is.
 

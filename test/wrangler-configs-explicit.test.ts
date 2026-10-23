@@ -40,12 +40,12 @@ describe("resolveExplicitWranglerConfigPaths", () => {
     expect(result).toEqual({ ok: true, configPaths: [config] });
   });
 
-  it("rejects duplicate identical paths", () => {
+  it("dedupes duplicate identical paths", () => {
     const root = makeRoot();
     const config = join(root, "wrangler.jsonc");
     writeFileSync(config, "{}", "utf8");
     const result = resolveExplicitWranglerConfigPaths([config, config]);
-    expect(result.ok).toBe(false);
+    expect(result).toEqual({ ok: true, configPaths: [config] });
   });
 
   it("rejects wrangler.toml", () => {

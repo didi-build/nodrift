@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, normalize, resolve } from "node:path";
 import { fatal, type FatalError } from "../findings.js";
 import { DEFAULT_CONFIG, parseConfig, type NodriftConfig } from "./parse-config.js";
 
@@ -20,16 +20,40 @@ function resolvePath(repoRoot: string, configPath: string): string {
   return isAbsolute(configPath) ? configPath : resolve(repoRoot, configPath);
 }
 
+function canonicalWranglerConfigPath(configPath: string): string {
+  try {
+    return realpathSync(configPath);
+  } catch {
+    return normalize(configPath);
+  }
+}
+
+/** Keeps the first path when several config entries resolve to the same file. */
+function dedupeWranglerConfigPaths(paths: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const configPath of paths) {
+    const key = canonicalWranglerConfigPath(configPath);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(configPath);
+  }
+  return deduped;
+}
+
 function resolvePaths(repoRoot: string, config: NodriftConfig): ResolvedNodriftConfig {
+  const wranglerConfigPaths = dedupeWranglerConfigPaths(
+    config.wranglerConfigs.map((path) => resolvePath(repoRoot, path)),
+  );
   return {
     ...config,
     mapPath: resolvePath(repoRoot, config.map),
     subprocessorsPath: resolvePath(repoRoot, config.subprocessors),
     migrationsDir: resolvePath(repoRoot, config.migrations),
     wranglerDir: resolvePath(repoRoot, config.wrangler),
-    wranglerConfigPaths: config.wranglerConfigs.map((path) =>
-      resolvePath(repoRoot, path),
-    ),
+    wranglerConfigPaths,
   };
 }
 

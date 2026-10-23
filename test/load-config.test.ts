@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config/load-config.js";
 
@@ -28,6 +28,28 @@ describe("loadConfig path resolution", () => {
     expect(loaded.ok).toBe(true);
     if (loaded.ok) {
       expect(loaded.config.mapPath).toBe(absMap);
+    }
+  });
+
+  it("dedupes wranglerConfigs paths that resolve to the same file", () => {
+    const root = mkdtempSync(join(tmpdir(), "nodrift-config-"));
+    tempRoots.push(root);
+    mkdirSync(join(root, "w"), { recursive: true });
+    writeFileSync(join(root, "w/wrangler.jsonc"), "{}", "utf8");
+    writeFileSync(
+      join(root, "nodrift.config.json"),
+      JSON.stringify({
+        wranglerConfigs: ["w/wrangler.jsonc", "./w/wrangler.jsonc"],
+      }),
+      "utf8",
+    );
+    const loaded = loadConfig(root);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      expect(loaded.config.wranglerConfigPaths).toEqual([
+        resolve(root, "w/wrangler.jsonc"),
+      ]);
+      expect(loaded.config.wranglerConfigsExplicit).toBe(true);
     }
   });
 });

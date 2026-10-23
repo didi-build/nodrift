@@ -38,19 +38,10 @@ export type ResolveExplicitWranglerConfigsResult =
 export function resolveExplicitWranglerConfigPaths(
   paths: readonly string[],
 ): ResolveExplicitWranglerConfigsResult {
-  const seenStrings = new Set<string>();
   const seenCanonical = new Set<string>();
   const ordered: string[] = [];
 
   for (const configPath of paths) {
-    if (seenStrings.has(configPath)) {
-      return {
-        ok: false,
-        fatal: fatal(configPath, `duplicate Wrangler config path \`${configPath}\``),
-      };
-    }
-    seenStrings.add(configPath);
-
     const canonical = canonicalConfigPath(configPath);
     if (seenCanonical.has(canonical)) {
       continue;

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkDataStoresVsMap } from "../src/check2/check-data-stores-vs-map.js";
+import { WRANGLER_DISCOVERY_SKIP_DIRS } from "../src/check2/wrangler-skip-dirs.js";
 import { compareBindingsToMap, collectCoveredBindings } from "../src/check2/compare.js";
 import { extractBindings } from "../src/check2/extract-bindings.js";
 import { expandDataMap } from "../src/data-map/expand.js";
@@ -1161,25 +1162,28 @@ id = "abc"
       }
     });
 
-    it("does not scan node_modules for wrangler configs", () => {
-      const repoRoot = makeRepoTree({
-        "wrangler.jsonc": "{}",
-        "node_modules/pkg/wrangler.jsonc": JSON.stringify({
-          images: { binding: "HIDDEN_IMAGES" },
-        }),
-      });
-      const mapDir = makeMapDir(minimalMap);
-      const result = checkDataStoresVsMap({
-        mapFilePath: join(mapDir, "data-map.yml"),
-        repoRoot,
-        wranglerSearchDir: repoRoot,
-      });
-      expect(result).toEqual({
-        kind: "ok",
-        outcome: "checked",
-        bindingCount: 0,
-      });
-    });
+    it.each([...WRANGLER_DISCOVERY_SKIP_DIRS])(
+      "does not scan %s for wrangler configs",
+      (skipName) => {
+        const repoRoot = makeRepoTree({
+          "wrangler.jsonc": "{}",
+          [`${skipName}/nested/wrangler.jsonc`]: JSON.stringify({
+            images: { binding: "HIDDEN_IMAGES" },
+          }),
+        });
+        const mapDir = makeMapDir(minimalMap);
+        const result = checkDataStoresVsMap({
+          mapFilePath: join(mapDir, "data-map.yml"),
+          repoRoot,
+          wranglerSearchDir: repoRoot,
+        });
+        expect(result).toEqual({
+          kind: "ok",
+          outcome: "checked",
+          bindingCount: 0,
+        });
+      },
+    );
   });
 
   describe("collectCoveredBindings", () => {

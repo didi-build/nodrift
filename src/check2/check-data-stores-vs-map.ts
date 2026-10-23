@@ -15,6 +15,7 @@ import {
 import { parseWranglerConfigFile, type WranglerReadFs } from "./parse-wrangler.js";
 import { resolveExplicitWranglerConfigPaths } from "./resolve-explicit-wrangler-configs.js";
 import type { CheckDataStoresVsMapResult } from "./types.js";
+import { formatUnreadableDirSkippedWarning } from "./discovery-warnings.js";
 import { formatWranglerTomlSkippedWarning } from "./wrangler-toml-warning.js";
 
 export type CheckDataStoresVsMapOptions = {
@@ -68,6 +69,22 @@ function sortFindings(findings: Finding[]): Finding[] {
 
 function tomlSkipWarnings(paths: readonly string[]): string[] {
   return paths.map(formatWranglerTomlSkippedWarning);
+}
+
+function unreadableDirWarnings(paths: readonly string[]): string[] {
+  return paths.map(formatUnreadableDirSkippedWarning);
+}
+
+function discoveryWarnings(
+  skippedUnreadableDirs: readonly string[],
+  skippedTomlPaths: readonly string[],
+): string[] {
+  const warnings = [
+    ...unreadableDirWarnings(skippedUnreadableDirs),
+    ...tomlSkipWarnings(skippedTomlPaths),
+  ];
+  warnings.sort(compareCodeUnits);
+  return warnings;
 }
 
 function attachWarnings<T extends CheckDataStoresVsMapResult>(
@@ -186,26 +203,33 @@ function checkLegacyWranglerDir(
 
 function finishDiscoveredRun(
   configPaths: readonly string[],
+  skippedUnreadableDirs: readonly string[],
   skippedTomlPaths: readonly string[],
   mapBindings: ReadonlySet<string>,
   wranglerReadFs?: WranglerReadFs,
   missingConfigFatal?: FatalError,
 ): CheckDataStoresVsMapResult {
+  const warnings = discoveryWarnings(skippedUnreadableDirs, skippedTomlPaths);
+
   if (configPaths.length === 0) {
     if (skippedTomlPaths.length > 0) {
-      return fatalResult([fatal(skippedTomlPaths[0], TOML_ONLY_FATAL_MESSAGE)]);
+      return fatalResult(
+        [fatal(skippedTomlPaths[0], TOML_ONLY_FATAL_MESSAGE)],
+        warnings,
+      );
     }
     if (mapBindings.size > 0 && missingConfigFatal) {
-      return fatalResult([missingConfigFatal]);
+      return fatalResult([missingConfigFatal], warnings);
     }
-    return {
-      kind: "ok",
-      outcome: "nothing_to_check",
-      bindingCount: 0,
-    };
+    return attachWarnings(
+      {
+        kind: "ok",
+        outcome: "nothing_to_check",
+        bindingCount: 0,
+      },
+      warnings,
+    );
   }
-
-  const warnings = tomlSkipWarnings(skippedTomlPaths);
   const allFindings: Finding[] = [];
   const fatals: FatalError[] = [];
   let bindingCount = 0;
@@ -277,6 +301,7 @@ function checkDiscoveredWranglerConfigs(
       return finishDiscoveredRun(
         [],
         [],
+        [],
         mapBindings,
         wranglerReadFs,
         missingConfigFatal,
@@ -288,6 +313,7 @@ function checkDiscoveredWranglerConfigs(
     }
     return finishDiscoveredRun(
       resolved.configPaths,
+      [],
       [],
       mapBindings,
       wranglerReadFs,
@@ -303,6 +329,7 @@ function checkDiscoveredWranglerConfigs(
 
   return finishDiscoveredRun(
     discovered.configPaths,
+    discovered.skippedUnreadableDirs,
     discovered.skippedTomlPaths,
     mapBindings,
     wranglerReadFs,

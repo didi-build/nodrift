@@ -9,8 +9,15 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { checkDataStoresVsMap } from "../src/check2/check-data-stores-vs-map.js";
 import { discoverWranglerConfigPaths } from "../src/check2/discover-wrangler-configs.js";
+import { formatUnreadableDirSkippedWarning } from "../src/check2/discovery-warnings.js";
 import { WRANGLER_DISCOVERY_SKIP_DIRS } from "../src/check2/wrangler-skip-dirs.js";
+
+const minimalMap = `schema_version: 1
+d1_tables: {}
+other_items: []
+`;
 
 const tempRoots: string[] = [];
 afterEach(() => {
@@ -43,15 +50,28 @@ describe("discoverWranglerConfigPaths", () => {
   it("skips unreadable subdirectories without failing the walk", () => {
     const root = makeRoot();
     writeFileSync(join(root, "wrangler.jsonc"), "{}", "utf8");
+    writeFileSync(join(root, "data-map.yml"), minimalMap, "utf8");
     const blocked = join(root, "blocked");
     mkdirSync(blocked);
     writeFileSync(join(blocked, "wrangler.jsonc"), "{}", "utf8");
     chmodSync(blocked, 0o000);
-    const result = discoverWranglerConfigPaths(root);
-    chmodSync(blocked, 0o755);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.configPaths).toEqual([join(root, "wrangler.jsonc")]);
+    try {
+      const result = discoverWranglerConfigPaths(root);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.configPaths).toEqual([join(root, "wrangler.jsonc")]);
+        expect(result.skippedUnreadableDirs).toEqual([blocked]);
+      }
+      const checkResult = checkDataStoresVsMap({
+        mapFilePath: join(root, "data-map.yml"),
+        repoRoot: root,
+        wranglerSearchDir: root,
+      });
+      expect(checkResult.warnings).toContain(
+        formatUnreadableDirSkippedWarning(blocked),
+      );
+    } finally {
+      chmodSync(blocked, 0o755);
     }
   });
 
