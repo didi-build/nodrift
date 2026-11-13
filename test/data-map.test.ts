@@ -13,6 +13,11 @@ const fixtureDir = join(
   "fixtures/we-met",
 );
 
+const physioFixtureDir = join(
+  fileURLToPath(new URL(".", import.meta.url)),
+  "fixtures/physio-poc",
+);
+
 function parseMap(yaml: string, filePath = "data-map.yml") {
   const result = parseDataMap(yaml, filePath);
   if ("fatal" in result) {
@@ -537,5 +542,20 @@ describe("we-met grouped fixture", () => {
     const flatYaml = readFileSync(join(fixtureDir, "data-map.flat.yml"), "utf8");
     const groupedYaml = readFileSync(join(fixtureDir, "data-map.grouped.yml"), "utf8");
     expect(convertFlatToGrouped(flatYaml)).toBe(groupedYaml);
+  });
+});
+
+describe("physio-poc bindings fixture", () => {
+  it("loads with zero validation findings", () => {
+    const yaml = readFileSync(join(physioFixtureDir, "data-map.yml"), "utf8");
+    const parsed = parseDataMap(yaml, join(physioFixtureDir, "data-map.yml"));
+    if ("fatal" in parsed) {
+      throw new Error(parsed.fatal.message);
+    }
+    expect(parsed.findings).toEqual([]);
+    expect(parsed.map.other_items.map((item) => item.id)).toEqual([
+      "d1.physio_db",
+      "r2.physio_media",
+    ]);
   });
 });

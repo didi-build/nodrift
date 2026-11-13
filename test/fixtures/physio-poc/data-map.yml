@@ -1,0 +1,27 @@
+# Mirror of didi-build/physio-poc docs/privacy/data-map.yml `other_items` bindings
+# recorded in nodrift for schema validation and cross-repo drift visibility (DIDI-1040).
+schema_version: 1
+
+d1_tables: {}
+
+other_items:
+  - id: d1.physio_db
+    binding: PHYSIO_DB
+    whose: operational
+    data: D1 SQL access for practitioner-owned tables defined in migrations (no patient records)
+    purpose: persist and query app state for the physio-poc Worker
+    processors: [Cloudflare]
+    retention: indefinite
+
+  - id: r2.physio_media
+    binding: PHYSIO_MEDIA
+    whose: operational
+    data: Exercise start and end image bytes (draft and public prefixed object keys); no patient information in object keys
+    purpose: persist generated exercise start/end images for the physio-poc Worker; POC retention is indefinite with no draft/blob cleanup — revisit before any real-user rollout
+    processors: [Cloudflare]
+    retention: indefinite
+    storage: R2 physio-media (Cloudflare account a83c6421b2b444e7d1862f57bc12a83a; private — no public access, no r2.dev URL, no custom domain, no CORS)
+    who_can_see: server-side only; objects served via authenticated routes or published share links, not via public bucket access
+    source: didi-build/physio-poc gated production deploy only (binding injected at deploy prep; not in committed wrangler.jsonc or PR CI)
+    notes: Bucket physio-media created 2026-11-13 (Linear DIDI-1208 comment 0c951266)
+    verified: false
